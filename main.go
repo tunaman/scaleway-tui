@@ -37,7 +37,6 @@ const (
 // pickerAction is what Enter triggers on the profile picker's action buttons.
 const (
 	pickerActionConnect = iota
-	pickerActionHelp
 	pickerActionQuit
 	pickerActionCount
 )
@@ -90,11 +89,12 @@ var (
 // ─────────────────────────────────────────────
 
 const logo = `
-  ██████  ██████ ██     ██      ████████ ██    ██ ██
- ██      ██      ██     ██         ██    ██    ██ ██
-  █████  ██      ██  █  ██  ███    ██    ██    ██ ██
-      ██ ██      ██ ███ ██         ██    ██    ██ ██
- ██████   ██████  ███ ███          ██     ██████  ██`
+ ██████╗   ██████╗  ██╗    ██╗    ████████╗██╗   ██╗██╗
+██╔════╝  ██╔════╝  ██║    ██║       ██╔══╝██║   ██║██║
+╚█████╗   ██║       ██║ █╗ ██║       ██║   ██║   ██║██║
+ ╚════██╗ ██║       ██║███╗██║       ██║   ██║   ██║██║
+ ██████╔╝ ╚██████╗  ╚███╔███╔╝       ██║   ╚██████╔╝██║
+ ╚═════╝   ╚═════╝   ╚══╝╚══╝        ╚═╝    ╚═════╝ ╚═╝`
 
 // ─────────────────────────────────────────────
 // Config — SDK-native profile loading
@@ -403,7 +403,7 @@ type rootModel struct {
 // ─────────────────────────────────────────────
 
 func (m rootModel) Init() tea.Cmd {
-	return tea.Batch(m.spin.Tick, tea.EnableBracketedPaste)
+	return tea.Batch(m.spin.Tick, tea.EnableBracketedPaste, tea.SetWindowTitle("Scaleway TUI"))
 }
 
 // ─────────────────────────────────────────────
@@ -989,8 +989,6 @@ func (m rootModel) handleEnter() (rootModel, tea.Cmd) {
 			m.loading = true
 			m.err = nil
 			return m, tea.Batch(m.spin.Tick, m.activateProfile(chosen))
-		case pickerActionHelp:
-			return m, nil
 		case pickerActionQuit:
 			return m, tea.Quit
 		}
@@ -1114,34 +1112,8 @@ func (m rootModel) drawProfilePicker() string {
 			m.spin.View()+" Connecting to Scaleway...")
 	}
 
-	// ── Logo with drop shadow ──
-	// Shadow is the logo rendered in a dark colour, shifted 1 row down + 2 cols right.
-	// We composite by rendering shadow lines first, then overlaying real logo lines
-	// on rows 0..N-1, leaving shadow visible on the last row only.
-	shadowColor := lipgloss.NewStyle().Foreground(lipgloss.Color("#4a1515"))
-	realColor := lipgloss.NewStyle().Foreground(colRed)
-
-	rawLines := strings.Split(strings.TrimPrefix(logo, "\n"), "\n")
-	n := len(rawLines)
-
-	// Shadow block: each line indented 2 extra spaces
-	shadowRendered := make([]string, n)
-	realRendered := make([]string, n)
-	for i, l := range rawLines {
-		shadowRendered[i] = "  " + shadowColor.Render(l) // 2-col right shift
-		realRendered[i] = realColor.Render(l)
-	}
-
-	// Composite: n+1 output lines total.
-	// Line 0     → real[0] only (no shadow above it)
-	// Line 1..n-1 → real[i] (shadow[i-1] is behind it, invisible — real wins)
-	// Line n     → shadow[n-1] (the shadow "tail" peeking out below)
-	composed := make([]string, n+1)
-	for i := 0; i < n; i++ {
-		composed[i] = realRendered[i]
-	}
-	composed[n] = shadowRendered[n-1]
-	logoStr := strings.Join(composed, "\n")
+	// ── Logo ──
+	logoStr := lipgloss.NewStyle().Foreground(colRed).Render(strings.TrimPrefix(logo, "\n"))
 
 	// ── Profile list ──
 	const listW = 44
@@ -1175,7 +1147,6 @@ func (m rootModel) drawProfilePicker() string {
 	}
 	actions := []actionDef{
 		{"CONNECT", colGreen},
-		{"HELP", colBlue},
 		{"QUIT", colRed},
 	}
 	var btns []string
@@ -1193,7 +1164,7 @@ func (m rootModel) drawProfilePicker() string {
 				Padding(0, 1).Render(label))
 		}
 	}
-	buttonRow := lipgloss.JoinHorizontal(lipgloss.Top, btns[0], "  ", btns[1], "  ", btns[2])
+	buttonRow := lipgloss.JoinHorizontal(lipgloss.Top, btns[0], "  ", btns[1])
 
 	hint := lipgloss.NewStyle().Foreground(colComment).Faint(true).
 		Render("↑↓ profile · ←→ action · Enter confirm")
@@ -1203,7 +1174,7 @@ func (m rootModel) drawProfilePicker() string {
 		errLine = "\n" + lipgloss.NewStyle().Foreground(colRed).Render("✗ "+m.err.Error())
 	}
 
-	content := lipgloss.JoinVertical(lipgloss.Left,
+	content := lipgloss.JoinVertical(lipgloss.Center,
 		logoStr,
 		"",
 		title,
