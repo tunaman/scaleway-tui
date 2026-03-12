@@ -20,6 +20,7 @@ import (
 	"github.com/scaleway/scaleway-sdk-go/api/account/v3"
 	billing "github.com/scaleway/scaleway-sdk-go/api/billing/v2beta1"
 	"github.com/scaleway/scaleway-sdk-go/api/k8s/v1"
+	"github.com/scaleway/scaleway-sdk-go/api/registry/v1"
 	"github.com/scaleway/scaleway-sdk-go/scw"
 )
 
@@ -32,6 +33,7 @@ const (
 	stateDashboard
 	stateObjectBrowser
 	stateBilling
+	stateRegistryBrowser
 )
 
 // pickerAction is what Enter triggers on the profile picker's action buttons.
@@ -43,8 +45,7 @@ const (
 )
 
 const (
-	focusProject = iota
-	focusNav
+	focusNav = iota
 	focusContent
 )
 
@@ -52,6 +53,7 @@ const (
 	serviceObjectStorage = iota
 	serviceK8s
 	serviceBilling
+	serviceRegistry
 	serviceCount
 )
 
@@ -116,13 +118,18 @@ type tuiConfig struct {
 
 // loadTUIConfig reads our TUI config. Returns empty struct on first run.
 func loadTUIConfig() tuiConfig {
-	home, _ := os.UserHomeDir()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return tuiConfig{}
+	}
 	data, err := os.ReadFile(filepath.Join(home, ".config", "scw-tui", "config.json"))
 	if err != nil {
 		return tuiConfig{}
 	}
 	var cfg tuiConfig
-	_ = json.Unmarshal(data, &cfg)
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return tuiConfig{}
+	}
 	return cfg
 }
 
@@ -133,8 +140,13 @@ func saveTUIConfig(cfg tuiConfig) {
 		return
 	}
 	dir := filepath.Join(home, ".config", "scw-tui")
-	_ = os.MkdirAll(dir, 0o700)
-	data, _ := json.Marshal(cfg)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return
+	}
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		return
+	}
 	_ = os.WriteFile(filepath.Join(dir, "config.json"), data, 0o600)
 }
 
@@ -208,6 +220,31 @@ type cluster struct {
 	version string
 }
 
+type registryNamespace struct {
+	id         string
+	name       string
+	endpoint   string
+	imageCount uint32
+	sizeBytes  uint64
+	status     string
+	isPublic   bool
+}
+
+type registryTag struct {
+	id   string
+	name string
+}
+
+type registryImage struct {
+	id         string
+	name       string
+	tags       []registryTag
+	sizeBytes  uint64
+	status     string
+	visibility string
+	updatedAt  time.Time
+}
+
 type projectItem struct {
 	name string
 	id   string
@@ -218,9 +255,10 @@ type projectItem struct {
 // ─────────────────────────────────────────────
 
 type dataMsg struct {
-	buckets  []bucket
-	clusters []cluster
-	projects []projectItem
+	buckets            []bucket
+	clusters           []cluster
+	projects           []projectItem
+	registryNamespaces []registryNamespace
 }
 
 type sizeMsg struct {
@@ -264,6 +302,21 @@ type createDoneMsg struct {
 	isBucket bool
 	bucket   string
 	prefix   string
+}
+
+type registryImagesMsg struct {
+	namespace registryNamespace
+	images    []registryImage
+}
+
+type registryImageDeletedMsg struct{}
+type registryTagsDeletedMsg struct {
+	imageID  string
+	tagNames []string
+}
+type registryTagsMsg struct {
+	imageID string
+	tags    []registryTag
 }
 
 type errMsg struct{ err error }
@@ -344,9 +397,36 @@ type rootModel struct {
 	projectID       string
 
 	// Data
-	buckets  []bucket
-	clusters []cluster
-	projects []projectItem
+	buckets            []bucket
+	clusters           []cluster
+	projects           []projectItem
+	registryNamespaces []registryNamespace
+
+	// Registry state
+	registryCursor    int
+	registryScrollY   int
+	registryFilter    string
+	registryFiltering bool
+
+	// Registry browser state (stateRegistryBrowser)
+	regBrowserNamespace     registryNamespace
+	regBrowserImages        []registryImage
+	regBrowserCursor        int
+	regBrowserScrollY       int
+	regBrowserFilter        string
+	regBrowserFiltering     bool
+	regBrowserFocus         int // 0 = images pane, 1 = versions pane
+	regBrowserTagCursor     int
+	regBrowserTagScrollY    int
+	regTagActionOverlay     bool
+	regTagsLoading          bool
+	regTagFilter            string
+	regTagFiltering         bool
+	regTagSelected          map[string]bool // selected tag names in current image
+	regConfirmDeleteTags    bool
+	regConfirmTagsToDelete  []registryTag
+	regConfirmDeleteImgID   string
+	regConfirmDeleteImgName string
 
 	// Object browser state (stateObjectBrowser)
 	browserBucket   string
@@ -467,6 +547,83 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.browserSelected = make(map[string]bool)
 		return m, tea.Batch(m.spin.Tick, m.fetchBucketContents(msg.bucket, msg.prefix))
 
+	case registryImagesMsg:
+		m.loading = false
+		m.regBrowserNamespace = msg.namespace
+		m.regBrowserImages = msg.images
+		m.regBrowserCursor = 0
+		m.regBrowserScrollY = 0
+		m.regBrowserFocus = 0
+		m.regBrowserTagCursor = 0
+		m.regBrowserTagScrollY = 0
+		m.regTagActionOverlay = false
+		m.regConfirmDeleteTags = false
+		m.regTagSelected = nil
+		m.regTagFilter = ""
+		m.regTagFiltering = false
+		m.state = stateRegistryBrowser
+		// Kick off tag fetch for the first image immediately.
+		if len(msg.images) > 0 {
+			m.regTagsLoading = true
+			return m, m.fetchRegistryTags(msg.images[0])
+		}
+		return m, nil
+
+	case registryTagsMsg:
+		m.regTagsLoading = false
+		for i := range m.regBrowserImages {
+			if m.regBrowserImages[i].id == msg.imageID {
+				m.regBrowserImages[i].tags = msg.tags
+				break
+			}
+		}
+		return m, nil
+
+	case registryImageDeletedMsg:
+		m.loading = false
+		// Remove deleted image from the list by name (cursor points to it).
+		visible := m.filteredRegistryImages()
+		if len(visible) > 0 && m.regBrowserCursor < len(visible) {
+			target := visible[m.regBrowserCursor].id
+			for i, img := range m.regBrowserImages {
+				if img.id == target {
+					m.regBrowserImages = append(m.regBrowserImages[:i], m.regBrowserImages[i+1:]...)
+					break
+				}
+			}
+		}
+		if m.regBrowserCursor >= len(m.regBrowserImages) {
+			m.regBrowserCursor = max(0, len(m.regBrowserImages)-1)
+		}
+		m.regBrowserTagCursor = 0
+		m.regBrowserTagScrollY = 0
+		return m, nil
+
+	case registryTagsDeletedMsg:
+		m.loading = false
+		for i := range m.regBrowserImages {
+			if m.regBrowserImages[i].id != msg.imageID {
+				continue
+			}
+			deleted := make(map[string]bool, len(msg.tagNames))
+			for _, n := range msg.tagNames {
+				deleted[n] = true
+			}
+			var remaining []registryTag
+			for _, t := range m.regBrowserImages[i].tags {
+				if !deleted[t.name] {
+					remaining = append(remaining, t)
+				}
+			}
+			m.regBrowserImages[i].tags = remaining
+			if m.regBrowserTagCursor >= len(remaining) {
+				m.regBrowserTagCursor = max(0, len(remaining)-1)
+			}
+			break
+		}
+		m.regTagSelected = nil
+		return m, nil
+
 	case bucketContentsMsg:
 		m.loading = false
 		m.browserBucket = msg.bucket
@@ -484,10 +641,13 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.buckets = msg.buckets
 		m.clusters = msg.clusters
 		m.projects = msg.projects
+		m.registryNamespaces = msg.registryNamespaces
 		m.bucketCursor = 0
 		m.bucketScrollY = 0
 		m.bucketScrollX = 0
 		m.clusterCursor = 0
+		m.registryCursor = 0
+		m.registryScrollY = 0
 		m.prevBucketSel = -1
 		// Update the display name now that we've resolved it.
 		if len(msg.projects) > 0 {
@@ -689,6 +849,140 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	// ── Tag action overlay: pull instructions ──
+	if m.regTagActionOverlay {
+		switch msg.String() {
+		case "ctrl+c":
+			return m, tea.Quit
+		default:
+			m.regTagActionOverlay = false
+		}
+		return m, nil
+	}
+
+	// ── Tag delete confirm ──
+	if m.regConfirmDeleteTags {
+		switch msg.String() {
+		case "ctrl+c":
+			return m, tea.Quit
+		case "y", "Y":
+			imageID := m.regConfirmDeleteImgID
+			tags := m.regConfirmTagsToDelete
+			m.regConfirmDeleteTags = false
+			m.regConfirmTagsToDelete = nil
+			m.loading = true
+			return m, tea.Batch(m.spin.Tick, m.deleteRegistryTags(imageID, tags))
+		default:
+			m.regConfirmDeleteTags = false
+			m.regConfirmTagsToDelete = nil
+		}
+		return m, nil
+	}
+
+	// ── Registry browser filter mode ──
+	if m.regBrowserFiltering {
+		switch msg.String() {
+		case "esc":
+			m.regBrowserFiltering = false
+			m.regBrowserFilter = ""
+			m.regBrowserCursor = 0
+			m.regBrowserScrollY = 0
+		case "enter":
+			m.regBrowserFiltering = false
+			m.regBrowserCursor = 0
+			m.regBrowserScrollY = 0
+		case "backspace", "ctrl+h":
+			if len([]rune(m.regBrowserFilter)) > 0 {
+				runes := []rune(m.regBrowserFilter)
+				m.regBrowserFilter = string(runes[:len(runes)-1])
+			} else {
+				m.regBrowserFiltering = false
+			}
+			m.regBrowserCursor = 0
+			m.regBrowserScrollY = 0
+		case "up", "k":
+			return m.handleUp()
+		case "down", "j":
+			return m.handleDown()
+		default:
+			if len(msg.Runes) == 1 {
+				m.regBrowserFilter += string(msg.Runes)
+				m.regBrowserCursor = 0
+				m.regBrowserScrollY = 0
+			}
+		}
+		return m, nil
+	}
+	// ── Registry tag filter mode ──
+	if m.regTagFiltering {
+		switch msg.String() {
+		case "ctrl+c":
+			return m, tea.Quit
+		case "esc":
+			m.regTagFiltering = false
+			m.regTagFilter = ""
+			m.regBrowserTagCursor = 0
+			m.regBrowserTagScrollY = 0
+		case "enter":
+			m.regTagFiltering = false
+			m.regBrowserTagCursor = 0
+			m.regBrowserTagScrollY = 0
+		case "backspace", "ctrl+h":
+			if len([]rune(m.regTagFilter)) > 0 {
+				runes := []rune(m.regTagFilter)
+				m.regTagFilter = string(runes[:len(runes)-1])
+			} else {
+				m.regTagFiltering = false
+			}
+			m.regBrowserTagCursor = 0
+			m.regBrowserTagScrollY = 0
+		case "up", "k":
+			return m.handleUp()
+		case "down", "j":
+			return m.handleDown()
+		default:
+			if len(msg.Runes) == 1 {
+				m.regTagFilter += string(msg.Runes)
+				m.regBrowserTagCursor = 0
+				m.regBrowserTagScrollY = 0
+			}
+		}
+		return m, nil
+	}
+	// ── Registry filter mode ──
+	if m.registryFiltering {
+		switch msg.String() {
+		case "esc":
+			m.registryFiltering = false
+			m.registryFilter = ""
+			m.registryCursor = 0
+			m.registryScrollY = 0
+		case "enter":
+			m.registryFiltering = false
+			m.registryCursor = 0
+			m.registryScrollY = 0
+		case "backspace", "ctrl+h":
+			if len([]rune(m.registryFilter)) > 0 {
+				runes := []rune(m.registryFilter)
+				m.registryFilter = string(runes[:len(runes)-1])
+			} else {
+				m.registryFiltering = false
+			}
+			m.registryCursor = 0
+			m.registryScrollY = 0
+		case "up", "k":
+			return m.handleUp()
+		case "down", "j":
+			return m.handleDown()
+		default:
+			if len(msg.Runes) == 1 {
+				m.registryFilter += string(msg.Runes)
+				m.registryCursor = 0
+				m.registryScrollY = 0
+			}
+		}
+		return m, nil
+	}
 
 	switch msg.String() {
 	case "ctrl+c", "q":
@@ -705,7 +999,52 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.confirmItems = nil
 			return m, nil
 		}
-		// Clear filter if active without entering filter mode.
+		// Dismiss tag action overlay.
+		if m.regTagActionOverlay {
+			m.regTagActionOverlay = false
+			return m, nil
+		}
+		// Dismiss registry tag delete confirm.
+		if m.regConfirmDeleteTags {
+			m.regConfirmDeleteTags = false
+			m.regConfirmTagsToDelete = nil
+			return m, nil
+		}
+		// Clear tag filter if active.
+		if m.regTagFiltering {
+			m.regTagFiltering = false
+			m.regTagFilter = ""
+			m.regBrowserTagCursor = 0
+			m.regBrowserTagScrollY = 0
+			return m, nil
+		}
+		if m.regTagFilter != "" {
+			m.regTagFilter = ""
+			m.regBrowserTagCursor = 0
+			m.regBrowserTagScrollY = 0
+			return m, nil
+		}
+		// Return to images pane from versions pane.
+		if m.state == stateRegistryBrowser && m.regBrowserFocus == 1 {
+			m.regBrowserFocus = 0
+			m.regTagSelected = nil
+			return m, nil
+		}
+		// Clear registry browser filter if active.
+		if m.regBrowserFilter != "" {
+			m.regBrowserFilter = ""
+			m.regBrowserCursor = 0
+			m.regBrowserScrollY = 0
+			return m, nil
+		}
+		// Clear registry filter if active.
+		if m.registryFilter != "" {
+			m.registryFilter = ""
+			m.registryCursor = 0
+			m.registryScrollY = 0
+			return m, nil
+		}
+		// Clear bucket filter if active without entering filter mode.
 		if m.bucketFilter != "" {
 			m.bucketFilter = ""
 			m.bucketCursor = 0
@@ -722,6 +1061,9 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.state == stateBilling {
 				return m, tea.Batch(m.spin.Tick, m.fetchBillingOverview(m.billingPeriod))
 			}
+			if m.state == stateRegistryBrowser {
+				return m, tea.Batch(m.spin.Tick, m.fetchRegistryImages(m.regBrowserNamespace))
+			}
 			return m, tea.Batch(m.spin.Tick, m.fetchData())
 		}
 	case "e", "E":
@@ -737,6 +1079,25 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.bucketCursor = 0
 			m.bucketScrollY = 0
 		}
+		if m.state == stateDashboard && m.focus == focusContent && m.activeService == serviceRegistry {
+			m.registryFiltering = true
+			m.registryFilter = ""
+			m.registryCursor = 0
+			m.registryScrollY = 0
+		}
+		if m.state == stateRegistryBrowser && m.regBrowserFocus == 1 && !m.loading {
+			m.regTagFiltering = true
+			m.regTagFilter = ""
+			m.regBrowserTagCursor = 0
+			m.regBrowserTagScrollY = 0
+			return m, nil
+		}
+		if m.state == stateRegistryBrowser && m.regBrowserFocus == 0 {
+			m.regBrowserFiltering = true
+			m.regBrowserFilter = ""
+			m.regBrowserCursor = 0
+			m.regBrowserScrollY = 0
+		}
 	case "y", "Y":
 		if m.showConfirm {
 			items := m.confirmItems
@@ -747,11 +1108,23 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.loading = true
 			return m, tea.Batch(m.spin.Tick, m.deleteEntries(bucket, prefix, items))
 		}
+		if m.regConfirmDeleteTags {
+			imageID := m.regConfirmDeleteImgID
+			tags := m.regConfirmTagsToDelete
+			m.regConfirmDeleteTags = false
+			m.regConfirmTagsToDelete = nil
+			m.loading = true
+			return m, tea.Batch(m.spin.Tick, m.deleteRegistryTags(imageID, tags))
+		}
 	case "n", "N":
 		if m.showConfirm {
 			m.showConfirm = false
 			m.confirmItems = nil
 			return m, nil
+		}
+		if m.regConfirmDeleteTags {
+			m.regConfirmDeleteTags = false
+			m.regConfirmTagsToDelete = nil
 		}
 	case "c", "C":
 		if m.loading || m.showConfirm {
@@ -795,10 +1168,49 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.showConfirm = true
 			}
 		}
+		if m.state == stateRegistryBrowser && !m.loading && !m.regTagActionOverlay && !m.regConfirmDeleteTags {
+			imgs := m.filteredRegistryImages()
+			if m.regBrowserFocus == 1 && len(imgs) > 0 && m.regBrowserCursor < len(imgs) {
+				img := imgs[m.regBrowserCursor]
+				filteredTags := m.filteredRegistryTags(img)
+				var toDelete []registryTag
+				if len(m.regTagSelected) > 0 {
+					for _, t := range filteredTags {
+						if m.regTagSelected[t.name] {
+							toDelete = append(toDelete, t)
+						}
+					}
+				} else if len(filteredTags) > 0 && m.regBrowserTagCursor < len(filteredTags) {
+					toDelete = []registryTag{filteredTags[m.regBrowserTagCursor]}
+				}
+				if len(toDelete) > 0 {
+					m.regConfirmTagsToDelete = toDelete
+					m.regConfirmDeleteImgID = img.id
+					m.regConfirmDeleteImgName = img.name
+					m.regConfirmDeleteTags = true
+				}
+			}
+			// Image-level deletion removed — only tag deletion is supported.
+		}
 	case "tab":
 		if m.state == stateDashboard {
 			m.focus = focusNav + (m.focus-focusNav+1)%2
 			m.showDropdown = false
+		}
+		if m.state == stateRegistryBrowser && !m.loading && !m.regTagActionOverlay && !m.regConfirmDeleteTags {
+			imgs := m.filteredRegistryImages()
+			if m.regBrowserFocus == 0 {
+				if len(imgs) > 0 && m.regBrowserCursor < len(imgs) {
+					if !m.regTagsLoading {
+						m.regBrowserFocus = 1
+						m.regBrowserTagCursor = 0
+						m.regBrowserTagScrollY = 0
+					}
+				}
+			} else {
+				m.regBrowserFocus = 0
+				m.regTagSelected = nil
+			}
 		}
 	case "left", "h":
 		if m.state == stateProfilePicker && !m.loading {
@@ -848,6 +1260,25 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.browserCursor++
 			}
 		}
+		if m.state == stateRegistryBrowser && m.regBrowserFocus == 1 && !m.regTagsLoading {
+			imgs := m.filteredRegistryImages()
+			if len(imgs) > 0 && m.regBrowserCursor < len(imgs) {
+				filteredTags := m.filteredRegistryTags(imgs[m.regBrowserCursor])
+				if len(filteredTags) > 0 && m.regBrowserTagCursor < len(filteredTags) {
+					tag := filteredTags[m.regBrowserTagCursor]
+					if m.regTagSelected == nil {
+						m.regTagSelected = make(map[string]bool)
+					}
+					m.regTagSelected[tag.name] = !m.regTagSelected[tag.name]
+					if !m.regTagSelected[tag.name] {
+						delete(m.regTagSelected, tag.name)
+					}
+					if m.regBrowserTagCursor < len(filteredTags)-1 {
+						m.regBrowserTagCursor++
+					}
+				}
+			}
+		}
 	case "a":
 		if m.state == stateObjectBrowser && len(m.browserEntries) > 0 {
 			if m.browserSelected == nil {
@@ -862,12 +1293,44 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
+		if m.state == stateRegistryBrowser && m.regBrowserFocus == 1 && !m.regTagsLoading {
+			imgs := m.filteredRegistryImages()
+			if len(imgs) > 0 && m.regBrowserCursor < len(imgs) {
+				filteredTags := m.filteredRegistryTags(imgs[m.regBrowserCursor])
+				if len(filteredTags) > 0 {
+					if m.regTagSelected == nil {
+						m.regTagSelected = make(map[string]bool)
+					}
+					allSelected := len(m.regTagSelected) == len(filteredTags)
+					for _, t := range filteredTags {
+						if allSelected {
+							delete(m.regTagSelected, t.name)
+						} else {
+							m.regTagSelected[t.name] = true
+						}
+					}
+				}
+			}
+		}
 	}
 	return m, nil
 }
 
 func (m rootModel) handleEsc() (rootModel, tea.Cmd) {
 	switch m.state {
+	case stateRegistryBrowser:
+		m.state = stateDashboard
+		m.activeService = serviceRegistry
+		m.regBrowserFilter = ""
+		m.regBrowserFiltering = false
+		m.regBrowserFocus = 0
+		m.regBrowserTagCursor = 0
+		m.regBrowserTagScrollY = 0
+		m.regTagActionOverlay = false
+		m.regConfirmDeleteTags = false
+		m.regTagSelected = nil
+		m.regTagFilter = ""
+		m.regTagFiltering = false
 	case stateObjectBrowser:
 		if m.browserPrefix == "" {
 			// At root of bucket — go back to the bucket list.
@@ -914,6 +1377,28 @@ func (m rootModel) handleUp() (rootModel, tea.Cmd) {
 			}
 		}
 
+	case m.state == stateRegistryBrowser:
+		imgs := m.filteredRegistryImages()
+		if m.regBrowserFocus == 0 && len(imgs) > 0 {
+			if m.regBrowserCursor > 0 {
+				m.regBrowserCursor--
+				if m.regBrowserCursor < m.regBrowserScrollY {
+					m.regBrowserScrollY = m.regBrowserCursor
+				}
+				m.regBrowserTagCursor = 0
+				m.regBrowserTagScrollY = 0
+				m.regTagsLoading = true
+				return m, m.fetchRegistryTags(imgs[m.regBrowserCursor])
+			}
+		} else if m.regBrowserFocus == 1 && len(imgs) > 0 && m.regBrowserCursor < len(imgs) {
+			if m.regBrowserTagCursor > 0 {
+				m.regBrowserTagCursor--
+				if m.regBrowserTagCursor < m.regBrowserTagScrollY {
+					m.regBrowserTagScrollY = m.regBrowserTagCursor
+				}
+			}
+		}
+
 	case m.state == stateDashboard && m.focus == focusNav:
 		m.activeService = (m.activeService - 1 + serviceCount) % serviceCount
 
@@ -932,6 +1417,14 @@ func (m rootModel) handleUp() (rootModel, tea.Cmd) {
 		}
 		if m.activeService == serviceK8s && len(m.clusters) > 0 {
 			m.clusterCursor = (m.clusterCursor - 1 + len(m.clusters)) % len(m.clusters)
+		}
+		if m.activeService == serviceRegistry && len(m.registryNamespaces) > 0 {
+			if m.registryCursor > 0 {
+				m.registryCursor--
+				if m.registryCursor < m.registryScrollY {
+					m.registryScrollY = m.registryCursor
+				}
+			}
 		}
 	}
 	return m, nil
@@ -954,7 +1447,23 @@ func (m rootModel) handleDown() (rootModel, tea.Cmd) {
 	case m.state == stateBilling && len(m.billingDetail) > 0:
 		if m.billingCursor < len(m.billingDetail)-1 {
 			m.billingCursor++
-			// scrollY is clamped in renderBillingDetail, no need to track here
+		}
+
+	case m.state == stateRegistryBrowser:
+		imgs := m.filteredRegistryImages()
+		if m.regBrowserFocus == 0 && len(imgs) > 0 {
+			if m.regBrowserCursor < len(imgs)-1 {
+				m.regBrowserCursor++
+				m.regBrowserTagCursor = 0
+				m.regBrowserTagScrollY = 0
+				m.regTagsLoading = true
+				return m, m.fetchRegistryTags(imgs[m.regBrowserCursor])
+			}
+		} else if m.regBrowserFocus == 1 && len(imgs) > 0 && m.regBrowserCursor < len(imgs) {
+			tags := imgs[m.regBrowserCursor].tags
+			if m.regBrowserTagCursor < len(tags)-1 {
+				m.regBrowserTagCursor++
+			}
 		}
 
 	case m.state == stateDashboard && m.focus == focusNav:
@@ -972,6 +1481,11 @@ func (m rootModel) handleDown() (rootModel, tea.Cmd) {
 		}
 		if m.activeService == serviceK8s && len(m.clusters) > 0 {
 			m.clusterCursor = (m.clusterCursor + 1) % len(m.clusters)
+		}
+		if m.activeService == serviceRegistry && len(m.registryNamespaces) > 0 {
+			if m.registryCursor < len(m.registryNamespaces)-1 {
+				m.registryCursor++
+			}
 		}
 	}
 	return m, nil
@@ -1003,9 +1517,26 @@ func (m rootModel) handleEnter() (rootModel, tea.Cmd) {
 		return m, tea.Batch(m.spin.Tick, m.fetchBucketContents(b.name, ""))
 
 	case m.state == stateDashboard && m.focus == focusContent &&
+		m.activeService == serviceRegistry && len(m.filteredRegistryNamespaces()) > 0:
+		fn := m.filteredRegistryNamespaces()
+		ns := fn[m.registryCursor]
+		m.loading = true
+		return m, tea.Batch(m.spin.Tick, m.fetchRegistryImages(ns))
+
+	case m.state == stateDashboard && m.focus == focusContent &&
 		m.activeService == serviceBilling:
 		m.loading = true
 		return m, tea.Batch(m.spin.Tick, m.fetchBillingOverview(m.billingPeriod))
+
+	case m.state == stateRegistryBrowser && m.regBrowserFocus == 1:
+		visible := m.filteredRegistryImages()
+		if len(visible) > 0 && m.regBrowserCursor < len(visible) {
+			img := visible[m.regBrowserCursor]
+			if len(img.tags) > 0 && m.regBrowserTagCursor < len(img.tags) {
+				m.regTagActionOverlay = true
+			}
+		}
+		return m, nil
 
 	case m.state == stateObjectBrowser && len(m.browserEntries) > 0:
 		entry := m.browserEntries[m.browserCursor]
@@ -1044,6 +1575,185 @@ func (m rootModel) activateProfile(name string) tea.Cmd {
 			region:           region,
 			defaultProjectID: projectID,
 		}
+	}
+}
+
+// ─────────────────────────────────────────────
+// filteredRegistryNamespaces
+// ─────────────────────────────────────────────
+
+func (m rootModel) filteredRegistryNamespaces() []registryNamespace {
+	if m.registryFilter == "" {
+		return m.registryNamespaces
+	}
+	needle := strings.ToLower(m.registryFilter)
+	var out []registryNamespace
+	for _, ns := range m.registryNamespaces {
+		if strings.Contains(strings.ToLower(ns.name), needle) {
+			out = append(out, ns)
+		}
+	}
+	return out
+}
+
+// ─────────────────────────────────────────────
+// filteredRegistryImages
+// ─────────────────────────────────────────────
+
+func (m rootModel) filteredRegistryImages() []registryImage {
+	if m.regBrowserFilter == "" {
+		return m.regBrowserImages
+	}
+	needle := strings.ToLower(m.regBrowserFilter)
+	var out []registryImage
+	for _, img := range m.regBrowserImages {
+		if strings.Contains(strings.ToLower(img.name), needle) {
+			out = append(out, img)
+		}
+	}
+	return out
+}
+
+// filteredRegistryTags returns the tags of img filtered by the current regTagFilter.
+func (m rootModel) filteredRegistryTags(img registryImage) []registryTag {
+	if m.regTagFilter == "" {
+		return img.tags
+	}
+	needle := strings.ToLower(m.regTagFilter)
+	var out []registryTag
+	for _, t := range img.tags {
+		if strings.Contains(strings.ToLower(t.name), needle) {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// deleteRegistryTags deletes one or more tags from an image.
+func (m rootModel) deleteRegistryTags(imageID string, tags []registryTag) tea.Cmd {
+	return func() tea.Msg {
+		regAPI := registry.NewAPI(m.scwClient)
+		region := scw.Region(m.activeRegion)
+		if region == "" {
+			region = scw.RegionNlAms
+		}
+		var deleted []string
+		for _, tag := range tags {
+			tagID := tag.id
+			if tagID == "" {
+				// Resolve tag ID via API if not cached.
+				resp, err := regAPI.ListTags(&registry.ListTagsRequest{
+					Region:  region,
+					ImageID: imageID,
+				})
+				if err != nil {
+					return errMsg{fmt.Errorf("list tags: %w", err)}
+				}
+				for _, t := range resp.Tags {
+					if t.Name == tag.name {
+						tagID = t.ID
+						break
+					}
+				}
+			}
+			if tagID == "" {
+				continue // skip if not found
+			}
+			_, err := regAPI.DeleteTag(&registry.DeleteTagRequest{
+				Region: region,
+				TagID:  tagID,
+			})
+			if err != nil {
+				return errMsg{fmt.Errorf("delete tag %q: %w", tag.name, err)}
+			}
+			deleted = append(deleted, tag.name)
+		}
+		return registryTagsDeletedMsg{imageID: imageID, tagNames: deleted}
+	}
+}
+
+// ─────────────────────────────────────────────
+// fetchRegistryImages
+// ─────────────────────────────────────────────
+
+func (m rootModel) fetchRegistryImages(ns registryNamespace) tea.Cmd {
+	return func() tea.Msg {
+		regAPI := registry.NewAPI(m.scwClient)
+		region := scw.Region(m.activeRegion)
+		if region == "" {
+			region = scw.RegionNlAms
+		}
+		req := &registry.ListImagesRequest{
+			Region:      region,
+			NamespaceID: &ns.id,
+		}
+		var images []registryImage
+		var page int32 = 1
+		for {
+			resp, err := regAPI.ListImages(req)
+			if err != nil {
+				return errMsg{fmt.Errorf("list images: %w", err)}
+			}
+			for _, img := range resp.Images {
+				ri := registryImage{
+					id:         img.ID,
+					name:       img.Name,
+					sizeBytes:  uint64(img.Size),
+					status:     string(img.Status),
+					visibility: string(img.Visibility),
+				}
+				if img.UpdatedAt != nil {
+					ri.updatedAt = *img.UpdatedAt
+				}
+				// Tags are lazily fetched via fetchRegistryTags when the image is selected.
+				images = append(images, ri)
+			}
+			if uint64(len(images)) >= uint64(resp.TotalCount) {
+				break
+			}
+			page++
+			req.Page = scw.Int32Ptr(page)
+		}
+		return registryImagesMsg{namespace: ns, images: images}
+	}
+}
+
+// ─────────────────────────────────────────────
+// fetchRegistryTags
+// ─────────────────────────────────────────────
+
+func (m rootModel) fetchRegistryTags(img registryImage) tea.Cmd {
+	return func() tea.Msg {
+		regAPI := registry.NewAPI(m.scwClient)
+		region := scw.Region(m.activeRegion)
+		if region == "" {
+			region = scw.RegionNlAms
+		}
+		req := &registry.ListTagsRequest{
+			Region:  region,
+			ImageID: img.id,
+		}
+		var tags []registryTag
+		var page int32 = 1
+		var totalFetched uint64
+		for {
+			resp, err := regAPI.ListTags(req)
+			if err != nil {
+				return errMsg{fmt.Errorf("list tags: %w", err)}
+			}
+			totalFetched += uint64(len(resp.Tags))
+			for _, t := range resp.Tags {
+				if !strings.HasPrefix(t.Name, "sha256-") {
+					tags = append(tags, registryTag{id: t.ID, name: t.Name})
+				}
+			}
+			if totalFetched >= uint64(resp.TotalCount) {
+				break
+			}
+			page++
+			req.Page = scw.Int32Ptr(page)
+		}
+		return registryTagsMsg{imageID: img.id, tags: tags}
 	}
 }
 
@@ -1097,6 +1807,8 @@ func (m rootModel) View() string {
 		return m.drawProfilePicker()
 	case stateObjectBrowser:
 		return m.drawObjectBrowser()
+	case stateRegistryBrowser:
+		return m.drawRegistryBrowser()
 	case stateBilling:
 		return m.drawBilling()
 	default:
@@ -1275,11 +1987,11 @@ func (m rootModel) renderTopBar() string {
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(colGreen).
 		Padding(0, 1).
-		Render(m.project)
+		Render(" " + m.project + " ")
 
 	region := lipgloss.NewStyle().Foreground(colComment).Render("  Region: ") +
-		lipgloss.NewStyle().Foreground(colBlue).Render(m.activeRegion)
-	clock := lipgloss.NewStyle().Foreground(colComment).Render(time.Now().Format("15:04"))
+		lipgloss.NewStyle().Foreground(colBlue).Render(" "+m.activeRegion+" ")
+	clock := lipgloss.NewStyle().Foreground(colComment).Render(" " + time.Now().Format("15:04") + " ")
 
 	leftPart := lipgloss.JoinHorizontal(lipgloss.Center, projectLabel, projectVal, region)
 	spacer := strings.Repeat(" ", max(0, m.width-lipgloss.Width(leftPart)-lipgloss.Width(clock)-8))
@@ -1334,6 +2046,7 @@ func (m rootModel) renderNav(height int) string {
 		{"Object Storage"},
 		{"K8s Clusters"},
 		{"Billing"},
+		{"Container Registry"},
 	}
 
 	sectionHeader := lipgloss.NewStyle().Foreground(colComment).PaddingLeft(1).PaddingBottom(1).Render("SERVICES")
@@ -1377,6 +2090,8 @@ func (m rootModel) renderContent(height int) string {
 		return m.renderClusters(contentW, height, focusColor)
 	case serviceBilling:
 		return m.renderBillingPreview(contentW, height, focusColor)
+	case serviceRegistry:
+		return m.renderRegistry(contentW, height, focusColor)
 	}
 	return ""
 }
@@ -1477,7 +2192,7 @@ func (m rootModel) renderBuckets(totalW, height int, borderColor lipgloss.Color)
 			hint = fmt.Sprintf(" ◀+%d", m.bucketScrollX)
 		}
 		hintW := lipgloss.Width(hint)
-		header = lipgloss.NewStyle().Foreground(colComment).Bold(true).Render(padRight("NAME", nameW-hintW))
+		header = "  " + lipgloss.NewStyle().Foreground(colComment).Bold(true).Render(padRight("NAME", nameW-hintW))
 		if hint != "" {
 			header += lipgloss.NewStyle().Foreground(colComment).Faint(true).Render(hint)
 		}
@@ -1542,17 +2257,17 @@ func (m rootModel) renderBucketDetail() string {
 	// Align values in the Usage block by padding keys to the same width.
 	usageKey := func(key, val string, valColor lipgloss.Color) string {
 		k := lipgloss.NewStyle().Foreground(colComment).Render(padRight(key, 9))
-		v := lipgloss.NewStyle().Foreground(valColor).Render(val)
+		v := lipgloss.NewStyle().Foreground(valColor).Render(" " + val + " ")
 		return k + v
 	}
 
 	lines := []string{
-		lipgloss.NewStyle().Foreground(colBlue).Bold(true).Render(nameDisplay),
+		lipgloss.NewStyle().Foreground(colBlue).Bold(true).Render(" " + nameDisplay + " "),
 		"",
 		lipgloss.NewStyle().Foreground(colComment).Render("Created: ") +
-			lipgloss.NewStyle().Foreground(colFg).Render(b.created),
+			lipgloss.NewStyle().Foreground(colFg).Render(" "+b.created+" "),
 		lipgloss.NewStyle().Foreground(colComment).Render("Region:  ") +
-			lipgloss.NewStyle().Foreground(colBlue).Render(m.activeRegion),
+			lipgloss.NewStyle().Foreground(colBlue).Render(" "+m.activeRegion+" "),
 		"",
 		lipgloss.NewStyle().Foreground(colComment).Bold(true).Render("Usage:"),
 	}
@@ -1614,6 +2329,98 @@ func (m rootModel) renderClusters(totalW, height int, borderColor lipgloss.Color
 		lipgloss.JoinVertical(lipgloss.Left, rows...),
 	)
 	return panelBox("K8S CLUSTERS", totalW, height, borderColor, content)
+}
+
+// ─────────────────────────────────────────────
+// Container Registry view
+// ─────────────────────────────────────────────
+
+func (m rootModel) renderRegistry(totalW, height int, borderColor lipgloss.Color) string {
+	nameW := totalW - 32
+	imagesW := 8
+	sizeW := 10
+	visW := 8
+
+	visible := m.filteredRegistryNamespaces()
+	listH := max(1, height-listRowOverhead)
+	scrollY := m.registryScrollY
+	if m.registryCursor >= scrollY+listH {
+		scrollY = m.registryCursor - listH + 1
+	}
+	if m.registryCursor < scrollY {
+		scrollY = m.registryCursor
+	}
+
+	var rows []string
+	if len(visible) == 0 {
+		msg := "  No container registry namespaces found."
+		if m.registryFilter != "" {
+			msg = "  No namespaces match \"" + m.registryFilter + "\"."
+		}
+		rows = append(rows, lipgloss.NewStyle().Faint(true).Render(msg))
+	}
+	end := min(scrollY+listH, len(visible))
+	for i := scrollY; i < end; i++ {
+		ns := visible[i]
+
+		statusColor := colGreen
+		switch ns.status {
+		case "error", "locked":
+			statusColor = colRed
+		case "deleting":
+			statusColor = colYellow
+		}
+		vis := "private"
+		if ns.isPublic {
+			vis = "public"
+		}
+		sizeStr := formatBytes(int64(ns.sizeBytes))
+		imagesStr := fmt.Sprintf("%d", ns.imageCount)
+
+		var nameStr string
+		if m.registryFilter != "" {
+			nameStr = highlightMatch(ns.name, m.registryFilter)
+		} else {
+			nameStr = lipgloss.NewStyle().Foreground(statusColor).Render(ns.name)
+		}
+		rowStr := padRight(nameStr, nameW) + padRight(imagesStr, imagesW) + padRight(sizeStr, sizeW) + padRight(vis, visW)
+
+		if i == m.registryCursor {
+			rows = append(rows, lipgloss.NewStyle().
+				Background(colBg3).Foreground(colFg).Bold(true).
+				Width(totalW-4).Render("▌ "+rowStr))
+		} else {
+			rows = append(rows, lipgloss.NewStyle().Foreground(colFg).Width(totalW-4).Render("  "+rowStr))
+		}
+	}
+
+	// ── Header / filter bar ──
+	var header string
+	switch {
+	case m.registryFiltering:
+		header = lipgloss.NewStyle().Foreground(colComment).Render("/") +
+			lipgloss.NewStyle().Foreground(colFg).Render(m.registryFilter) +
+			lipgloss.NewStyle().Foreground(colGreen).Render("▌")
+	case m.registryFilter != "":
+		header = lipgloss.NewStyle().Foreground(colYellow).Render("/ "+m.registryFilter) +
+			lipgloss.NewStyle().Foreground(colComment).Faint(true).Render("  Esc to clear")
+	default:
+		header = "  " + lipgloss.NewStyle().Foreground(colComment).Bold(true).Render(
+			padRight("NAMESPACE", nameW) + padRight("IMAGES", imagesW) + padRight("SIZE", sizeW) + padRight("VIS", visW),
+		)
+	}
+
+	panelTitle := "CONTAINER REGISTRY"
+	if m.registryFilter != "" {
+		panelTitle = fmt.Sprintf("CONTAINER REGISTRY  %d/%d", len(visible), len(m.registryNamespaces))
+	}
+
+	content := lipgloss.JoinVertical(lipgloss.Left,
+		header,
+		strings.Repeat("─", totalW-4),
+		lipgloss.JoinVertical(lipgloss.Left, rows...),
+	)
+	return panelBox(panelTitle, totalW, height, borderColor, content)
 }
 
 // ─────────────────────────────────────────────
@@ -1764,6 +2571,7 @@ func (m rootModel) fetchData() tea.Cmd {
 		var buckets []bucket
 		var clusters []cluster
 		var projects []projectItem
+		var registryNamespaces []registryNamespace
 
 		// ── Project name ──
 		// We skip ListProjects entirely (insufficient permissions) and instead
@@ -1825,16 +2633,38 @@ func (m rootModel) fetchData() tea.Cmd {
 			})
 		}
 
-		return dataMsg{buckets: buckets, clusters: clusters, projects: projects}
-	}
-}
+		// ── Registry namespaces ──
+		regAPI := registry.NewAPI(m.scwClient)
+		rReq := &registry.ListNamespacesRequest{Region: region}
+		if m.projectID != "" {
+			rReq.ProjectID = &m.projectID
+		}
+		var rPage int32 = 1
+		for {
+			resp, err := regAPI.ListNamespaces(rReq)
+			if err != nil {
+				break // non-fatal: registry may not be enabled
+			}
+			for _, ns := range resp.Namespaces {
+				registryNamespaces = append(registryNamespaces, registryNamespace{
+					id:         ns.ID,
+					name:       ns.Name,
+					endpoint:   ns.Endpoint,
+					imageCount: ns.ImageCount,
+					sizeBytes:  uint64(ns.Size),
+					status:     string(ns.Status),
+					isPublic:   ns.IsPublic,
+				})
+			}
+			if uint64(len(registryNamespaces)) >= uint64(resp.TotalCount) {
+				break
+			}
+			rPage++
+			rReq.Page = scw.Int32Ptr(rPage)
+		}
 
-// refetchForProject re-runs fetchData with the newly selected projectID in
-// scope. It works on a copy of the model so the goroutine sees the correct
-// value without a data race.
-func (m rootModel) refetchForProject(p projectItem) tea.Cmd {
-	m.projectID = p.id
-	return m.fetchData()
+		return dataMsg{buckets: buckets, clusters: clusters, projects: projects, registryNamespaces: registryNamespaces}
+	}
 }
 
 func (m rootModel) calculateSize() tea.Cmd {
@@ -1962,6 +2792,494 @@ func (m rootModel) drawObjectBrowser() string {
 	return base
 }
 
+// ─────────────────────────────────────────────
+// Registry browser view
+// ─────────────────────────────────────────────
+
+func (m rootModel) drawRegistryBrowser() string {
+	ns := m.regBrowserNamespace
+	visible := m.filteredRegistryImages()
+
+	// ── Top bar ──
+	crumb := lipgloss.NewStyle().Foreground(colComment).Render("REGISTRY ")
+	nsPart := lipgloss.NewStyle().
+		Foreground(colGreen).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(colGreen).
+		Padding(0, 1).
+		Render(ns.name)
+	leftPart := lipgloss.JoinHorizontal(lipgloss.Center, crumb, nsPart)
+	countStr := lipgloss.NewStyle().Foreground(colComment).Render(
+		fmt.Sprintf("%d images", len(m.regBrowserImages)),
+	)
+	spacer := strings.Repeat(" ", max(0, m.width-lipgloss.Width(leftPart)-lipgloss.Width(countStr)-8))
+	topBar := lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder(), false, false, true, false).
+		BorderForeground(colBorder).
+		Width(m.width-4).Padding(0, 1).
+		Render(leftPart + spacer + countStr)
+
+	// ── Status bar ──
+	hotkey := func(key, desc string) string {
+		k := lipgloss.NewStyle().Background(colBg3).Foreground(colYellow).Bold(true).Render(" " + key + " ")
+		d := lipgloss.NewStyle().Foreground(colComment).Background(colBg2).Render(" " + desc + " ")
+		return k + d
+	}
+	var keys string
+	if m.regBrowserFocus == 1 {
+		keys = lipgloss.JoinHorizontal(lipgloss.Top,
+			hotkey("↑↓", "Navigate"),
+			hotkey("Tab", "Images"),
+			hotkey("Enter", "Pull"),
+			hotkey("Space", "Select"),
+			hotkey("A", "Select all"),
+			hotkey("D", "Delete"),
+			hotkey("/", "Filter"),
+			hotkey("Esc", "Back"),
+			hotkey("Q", "Quit"),
+		)
+	} else {
+		keys = lipgloss.JoinHorizontal(lipgloss.Top,
+			hotkey("↑↓", "Navigate"),
+			hotkey("Tab", "Versions"),
+			hotkey("/", "Filter"),
+			hotkey("Esc", "Back"),
+			hotkey("F5", "Refresh"),
+			hotkey("Q", "Quit"),
+		)
+	}
+	barW := m.width - 4
+	spacerBar := lipgloss.NewStyle().Background(colBg2).Width(max(0, barW-lipgloss.Width(keys))).Render("")
+	statusBar := lipgloss.NewStyle().Background(colBg2).Width(barW).
+		Render(lipgloss.JoinHorizontal(lipgloss.Top, keys, spacerBar))
+
+	if m.loading {
+		inner := lipgloss.Place(
+			m.width-4, m.height-topBarHeight-statusBarHeight-4,
+			lipgloss.Center, lipgloss.Center,
+			m.spin.View()+" Loading…",
+		)
+		return lipgloss.NewStyle().Margin(1, 2).Render(
+			lipgloss.JoinVertical(lipgloss.Left, topBar, inner, statusBar),
+		)
+	}
+
+	// ── Column layout ──
+	const regDetailPaneW = 52
+	contentW := m.width - 8
+	contentH := m.height - topBarHeight - statusBarHeight - 6
+	listW := contentW - regDetailPaneW - 1
+	const scrollW = 1
+	const sizeW = 10
+	const modW = 16
+	const prefixW = 2
+	rowW := listW - 2
+	nameW := rowW - prefixW - sizeW - modW - scrollW
+	if nameW < 8 {
+		nameW = 8
+	}
+
+	listH := max(1, contentH-listRowOverhead)
+	scrollY := m.regBrowserScrollY
+	if m.regBrowserCursor >= scrollY+listH {
+		scrollY = m.regBrowserCursor - listH + 1
+	}
+	if m.regBrowserCursor < scrollY {
+		scrollY = m.regBrowserCursor
+	}
+
+	vScrollBar := renderVScrollBar(len(visible), scrollY, listH)
+
+	listBorderColor := colPurple
+	if m.regBrowserFocus == 1 {
+		listBorderColor = colBorder
+	}
+
+	// ── Image list header / filter bar ──
+	var listHeader string
+	switch {
+	case m.regBrowserFiltering:
+		listHeader = lipgloss.NewStyle().Foreground(colComment).Render("/") +
+			lipgloss.NewStyle().Foreground(colFg).Render(m.regBrowserFilter) +
+			lipgloss.NewStyle().Foreground(colGreen).Render("▌")
+	case m.regBrowserFilter != "":
+		listHeader = lipgloss.NewStyle().Foreground(colYellow).Render("/ "+m.regBrowserFilter) +
+			lipgloss.NewStyle().Foreground(colComment).Faint(true).Render("  Esc to clear")
+	default:
+		listHeader = "  " + lipgloss.NewStyle().Foreground(colComment).Bold(true).Render(
+			padRight("IMAGE", nameW) + padRight("MODIFIED", modW) + padRight("SIZE", sizeW),
+		)
+	}
+
+	// ── Image rows ──
+	var rows []string
+	if len(visible) == 0 {
+		noMsg := "  No images in this namespace."
+		if m.regBrowserFilter != "" {
+			noMsg = "  No images match \"" + m.regBrowserFilter + "\"."
+		}
+		for si := 0; si < listH; si++ {
+			sb := ""
+			if si < len(vScrollBar) {
+				sb = vScrollBar[si]
+			}
+			if si == 0 {
+				rows = append(rows, lipgloss.NewStyle().Faint(true).Width(rowW-scrollW).Render(noMsg)+sb)
+			} else {
+				rows = append(rows, strings.Repeat(" ", rowW-scrollW)+sb)
+			}
+		}
+	}
+
+	end := min(scrollY+listH, len(visible))
+	for i := scrollY; i < end; i++ {
+		img := visible[i]
+		sb := ""
+		if i-scrollY < len(vScrollBar) {
+			sb = vScrollBar[i-scrollY]
+		}
+
+		statusColor := colGreen
+		switch img.status {
+		case "error", "locked":
+			statusColor = colRed
+		case "deleting":
+			statusColor = colYellow
+		}
+
+		sizeStr := formatBytes(int64(img.sizeBytes))
+		modStr := ""
+		if !img.updatedAt.IsZero() {
+			modStr = img.updatedAt.Format("2006-01-02")
+		}
+
+		var nameCol string
+		if m.regBrowserFilter != "" {
+			nameCol = padRight(highlightMatch(img.name, m.regBrowserFilter), nameW)
+		} else {
+			nameCol = lipgloss.NewStyle().Foreground(statusColor).Render(padRight(img.name, nameW))
+		}
+		modCol := lipgloss.NewStyle().Foreground(colComment).Render(padRight(modStr, modW))
+		rowStr := nameCol + modCol + padRight(sizeStr, sizeW) + sb
+
+		if i == m.regBrowserCursor {
+			rows = append(rows, lipgloss.NewStyle().
+				Background(colBg3).Foreground(colFg).Bold(true).
+				Width(rowW).Render("▌ "+rowStr))
+		} else {
+			rows = append(rows, lipgloss.NewStyle().Foreground(colFg).Width(rowW).Render("  "+rowStr))
+		}
+	}
+
+	panelTitle := ns.endpoint
+	if m.regBrowserFilter != "" {
+		panelTitle = fmt.Sprintf("%s  %d/%d", ns.endpoint, len(visible), len(m.regBrowserImages))
+	}
+
+	listContent := lipgloss.JoinVertical(lipgloss.Left,
+		listHeader,
+		strings.Repeat("─", rowW),
+		lipgloss.JoinVertical(lipgloss.Left, rows...),
+	)
+	listPane := panelBox(panelTitle, listW, contentH, listBorderColor, listContent)
+	detailPane := m.renderRegistryVersionPane(regDetailPaneW, contentH)
+
+	content := lipgloss.JoinHorizontal(lipgloss.Top, listPane, detailPane)
+	base := lipgloss.NewStyle().Margin(1, 2).Render(
+		lipgloss.JoinVertical(lipgloss.Left, topBar, content, statusBar),
+	)
+
+	if m.regTagActionOverlay {
+		return m.renderRegistryTagActionOverlay()
+	}
+	if m.regConfirmDeleteTags {
+		return m.renderRegistryTagsDeleteConfirm(base)
+	}
+	return base
+}
+
+// renderRegistryVersionPane renders the right-hand versions/tags detail pane.
+func (m rootModel) renderRegistryVersionPane(paneW, paneH int) string {
+	borderColor := colBorder
+	if m.regBrowserFocus == 1 {
+		borderColor = colPurple
+	}
+
+	visible := m.filteredRegistryImages()
+	if len(visible) == 0 || m.regBrowserCursor >= len(visible) {
+		return panelBox("VERSIONS", paneW, paneH, borderColor,
+			lipgloss.NewStyle().Faint(true).Render("Select an image"))
+	}
+
+	img := visible[m.regBrowserCursor]
+
+	if m.regTagsLoading {
+		return panelBox("VERSIONS", paneW, paneH, borderColor,
+			lipgloss.NewStyle().Foreground(colComment).Render("Loading…"))
+	}
+
+	tags := m.filteredRegistryTags(img)
+
+	const scrollW = 1
+	const prefixW = 2
+	const chkW = 4 // "[x] " or "[ ] "
+	innerW := paneW - 2
+	tagW := innerW - prefixW - scrollW - chkW
+
+	tagListH := max(1, paneH-listRowOverhead)
+	scrollY := m.regBrowserTagScrollY
+	if m.regBrowserTagCursor >= scrollY+tagListH {
+		scrollY = m.regBrowserTagCursor - tagListH + 1
+	}
+	if m.regBrowserTagCursor < scrollY {
+		scrollY = m.regBrowserTagCursor
+	}
+
+	vScrollBar := renderVScrollBar(len(tags), scrollY, tagListH)
+
+	// Title: show selected count, filter count, or plain count.
+	var title string
+	switch {
+	case len(m.regTagSelected) > 0:
+		title = fmt.Sprintf("VERSIONS (%d selected)", len(m.regTagSelected))
+	case m.regTagFilter != "":
+		title = fmt.Sprintf("VERSIONS (%d/%d)", len(tags), len(img.tags))
+	default:
+		title = fmt.Sprintf("VERSIONS (%d)", len(tags))
+	}
+
+	// Header: filter bar when filtering, otherwise column header with hint.
+	var headerStr string
+	switch {
+	case m.regTagFiltering:
+		headerStr = lipgloss.NewStyle().Foreground(colComment).Render("/") +
+			lipgloss.NewStyle().Foreground(colFg).Render(m.regTagFilter) +
+			lipgloss.NewStyle().Foreground(colGreen).Render("▌")
+	case m.regTagFilter != "":
+		headerStr = lipgloss.NewStyle().Foreground(colYellow).Render("/ "+m.regTagFilter) +
+			lipgloss.NewStyle().Foreground(colComment).Faint(true).Render("  Esc to clear")
+	case m.regBrowserFocus == 1:
+		const hintStr = "Enter  Pull"
+		const hintW = len(hintStr)
+		headerStr = lipgloss.NewStyle().Foreground(colComment).Bold(true).Render(padRight("TAG", tagW+chkW-hintW)) +
+			lipgloss.NewStyle().Foreground(colComment).Faint(true).Render(hintStr)
+	default:
+		headerStr = lipgloss.NewStyle().Foreground(colComment).Bold(true).Render(padRight("TAG", tagW+chkW))
+	}
+
+	var rows []string
+	if len(tags) == 0 {
+		noMsg := "  No tags"
+		if m.regTagFilter != "" {
+			noMsg = "  No tags match \"" + m.regTagFilter + "\""
+		}
+		for si := 0; si < tagListH; si++ {
+			sb := ""
+			if si < len(vScrollBar) {
+				sb = vScrollBar[si]
+			}
+			if si == 0 {
+				rows = append(rows, lipgloss.NewStyle().Faint(true).Width(innerW-scrollW).Render(noMsg)+sb)
+			} else {
+				rows = append(rows, strings.Repeat(" ", innerW-scrollW)+sb)
+			}
+		}
+	}
+
+	end := min(scrollY+tagListH, len(tags))
+	for i := scrollY; i < end; i++ {
+		tag := tags[i]
+		sb := ""
+		if i-scrollY < len(vScrollBar) {
+			sb = vScrollBar[i-scrollY]
+		}
+
+		isSelected := m.regTagSelected[tag.name]
+		isCursor := m.regBrowserFocus == 1 && i == m.regBrowserTagCursor
+
+		var chk string
+		if isSelected {
+			chk = lipgloss.NewStyle().Foreground(colGreen).Bold(true).Render("[x] ")
+		} else {
+			chk = lipgloss.NewStyle().Foreground(colComment).Render("[ ] ")
+		}
+
+		var tagCol string
+		if m.regTagFilter != "" {
+			tagCol = padRight(highlightMatch(tag.name, m.regTagFilter), tagW)
+		} else {
+			tagCol = lipgloss.NewStyle().Foreground(colGreen).Render(padRight(tag.name, tagW))
+		}
+		rowStr := chk + tagCol + sb
+
+		if isCursor {
+			rows = append(rows, lipgloss.NewStyle().
+				Background(colBg3).Foreground(colFg).Bold(true).
+				Width(innerW).Render("▌ "+rowStr))
+		} else {
+			rows = append(rows, lipgloss.NewStyle().Foreground(colFg).Width(innerW).Render("  "+rowStr))
+		}
+	}
+
+	content := lipgloss.JoinVertical(lipgloss.Left,
+		headerStr,
+		strings.Repeat("─", innerW),
+		lipgloss.JoinVertical(lipgloss.Left, rows...),
+	)
+	return panelBox(title, paneW, paneH, borderColor, content)
+}
+
+// renderRegistryTagActionOverlay shows pull instructions and a delete button for
+// the tag currently selected in the versions pane.
+func (m rootModel) renderRegistryTagActionOverlay() string {
+	visible := m.filteredRegistryImages()
+	if len(visible) == 0 || m.regBrowserCursor >= len(visible) {
+		return ""
+	}
+	img := visible[m.regBrowserCursor]
+	if len(img.tags) == 0 || m.regBrowserTagCursor >= len(img.tags) {
+		return ""
+	}
+	tag := img.tags[m.regBrowserTagCursor]
+	ns := m.regBrowserNamespace
+
+	pullBase := ns.endpoint + "/" + img.name
+	var pullCmd string
+	if strings.HasPrefix(tag.name, "sha256-") {
+		pullCmd = "docker pull " + pullBase + "@sha256:" + tag.name[len("sha256-"):]
+	} else {
+		pullCmd = "docker pull " + pullBase + ":" + tag.name
+	}
+
+	dialogW := min(m.width-8, 90)
+	innerW := dialogW - 6
+	bg := lipgloss.NewStyle().Background(colBg2)
+
+	heading := bg.Foreground(colPurple).Bold(true).Width(innerW).Render("Pull Instructions")
+	imgLine := bg.Width(innerW).Render(
+		bg.Foreground(colComment).Render("Image: ") +
+			bg.Foreground(colFg).Render(img.name),
+	)
+	tagLine := bg.Width(innerW).Render(
+		bg.Foreground(colComment).Render("Tag:   ") +
+			bg.Foreground(colGreen).Render(tag.name),
+	)
+	empty := bg.Width(innerW).Render("")
+
+	codeBlock := lipgloss.NewStyle().
+		Background(colBg3).Foreground(colGreen).
+		Padding(0, 1).Width(innerW).
+		Render("$ " + pullCmd)
+
+	divider := bg.Foreground(colBg3).Width(innerW).Render(strings.Repeat("─", innerW))
+
+	closeBtn := lipgloss.NewStyle().
+		Background(colBg3).Foreground(colFg).
+		Width(innerW).Align(lipgloss.Center).
+		Render("Esc  Close")
+
+	body := bg.Width(innerW).Render(
+		lipgloss.JoinVertical(lipgloss.Left,
+			heading, empty, imgLine, tagLine, empty, codeBlock, empty, divider, empty, closeBtn,
+		),
+	)
+	dialog := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(colPurple).
+		Background(colBg2).
+		Padding(1, 2).
+		Width(dialogW).
+		Render(body)
+
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, dialog,
+		lipgloss.WithWhitespaceChars(" "),
+		lipgloss.WithWhitespaceForeground(colBg),
+	)
+}
+
+// renderRegistryTagsDeleteConfirm shows a delete confirmation for one or more tags.
+func (m rootModel) renderRegistryTagsDeleteConfirm(base string) string {
+	tags := m.regConfirmTagsToDelete
+	if len(tags) == 0 {
+		return base
+	}
+	n := len(tags)
+
+	const dialogW = 54
+	const innerW = dialogW - 6
+	bg := lipgloss.NewStyle().Background(colBg2)
+
+	countStr := "1 tag"
+	if n > 1 {
+		countStr = fmt.Sprintf("%d tags", n)
+	}
+	heading := bg.Foreground(colRed).Bold(true).Width(innerW).Render("Delete " + countStr + "?")
+
+	imgDisplay := m.regConfirmDeleteImgName
+	if lipgloss.Width(imgDisplay) > innerW-8 {
+		rr := []rune(imgDisplay)
+		imgDisplay = string(rr[:innerW-9]) + "\u2026"
+	}
+	imgLine := bg.Width(innerW).Render(
+		lipgloss.NewStyle().Background(colBg2).Foreground(colComment).Render("Image: ") +
+			lipgloss.NewStyle().Background(colBg2).Foreground(colFg).Render(imgDisplay),
+	)
+
+	const maxShow = 5
+	var tagLines []string
+	for i, t := range tags {
+		if i >= maxShow {
+			more := bg.Foreground(colComment).Faint(true).Width(innerW).
+				Render(fmt.Sprintf("  \u2026 and %d more", n-maxShow))
+			tagLines = append(tagLines, more)
+			break
+		}
+		line := bg.Width(innerW).Render(
+			lipgloss.NewStyle().Background(colBg2).Foreground(colComment).Render("  \u00b7 ") +
+				lipgloss.NewStyle().Background(colBg2).Foreground(colGreen).Bold(true).Render(t.name),
+		)
+		tagLines = append(tagLines, line)
+	}
+
+	warn := bg.Foreground(colComment).Width(innerW).Render("This action is irreversible.")
+	divider := bg.Foreground(colBg3).Width(innerW).Render(strings.Repeat("\u2500", innerW))
+	empty := bg.Width(innerW).Render("")
+
+	btnW := (innerW - 1) / 2
+	leftW := btnW + ((innerW - 1) % 2)
+	yesBtn := lipgloss.NewStyle().
+		Background(colRed).Foreground(lipgloss.Color("#ffffff")).
+		Bold(true).Width(leftW).Align(lipgloss.Center).
+		Render("Y  Yes, delete")
+	noBtn := lipgloss.NewStyle().
+		Background(colBg3).Foreground(colFg).
+		Width(btnW).Align(lipgloss.Center).
+		Render("N  Cancel")
+	buttons := lipgloss.JoinHorizontal(lipgloss.Top,
+		yesBtn,
+		lipgloss.NewStyle().Background(colBg2).Width(1).Render(""),
+		noBtn,
+	)
+
+	allLines := []string{heading, empty, imgLine, empty}
+	allLines = append(allLines, tagLines...)
+	allLines = append(allLines, empty, warn, empty, divider, empty, buttons)
+
+	body := bg.Width(innerW).Render(lipgloss.JoinVertical(lipgloss.Left, allLines...))
+	dialog := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(colRed).
+		Background(colBg2).
+		Padding(1, 2).
+		Width(dialogW).
+		Render(body)
+
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, dialog,
+		lipgloss.WithWhitespaceChars(" "),
+		lipgloss.WithWhitespaceForeground(colBg),
+	)
+}
+
 // renderConfirmDialog overlays a centred confirmation box on top of the base view.
 func (m rootModel) renderConfirmDialog(base string) string {
 	n := len(m.confirmItems)
@@ -1984,21 +3302,21 @@ func (m rootModel) renderConfirmDialog(base string) string {
 	if n > 1 {
 		countStr = fmt.Sprintf("%d items", n)
 	}
-	heading := bg.Copy().Foreground(colRed).Bold(true).Width(innerW).
+	heading := bg.Foreground(colRed).Bold(true).Width(innerW).
 		Render("Delete " + countStr + "?")
 
 	warnText := "This action cannot be undone."
 	if hasDir {
 		warnText = "Folders will be deleted recursively."
 	}
-	warn := bg.Copy().Foreground(colComment).Width(innerW).Render(warnText)
+	warn := bg.Foreground(colComment).Width(innerW).Render(warnText)
 
 	// ── Item list (max 5 shown) ──
 	const maxShow = 5
 	var itemLines []string
 	for i, e := range m.confirmItems {
 		if i >= maxShow {
-			more := bg.Copy().Foreground(colComment).Faint(true).Width(innerW).
+			more := bg.Foreground(colComment).Faint(true).Width(innerW).
 				Render(fmt.Sprintf("  … and %d more", n-maxShow))
 			itemLines = append(itemLines, more)
 			break
@@ -2015,14 +3333,14 @@ func (m rootModel) renderConfirmDialog(base string) string {
 			rr := []rune(name)
 			name = string(rr[:maxNameW-1]) + "…"
 		}
-		line := bg.Copy().Width(innerW).Render(
+		line := bg.Width(innerW).Render(
 			"  " + itemIcon + lipgloss.NewStyle().Background(colBg2).Foreground(colFg).Render(name),
 		)
 		itemLines = append(itemLines, line)
 	}
 
 	// ── Divider ──
-	divider := bg.Copy().Foreground(colBg3).Width(innerW).Render(strings.Repeat("─", innerW))
+	divider := bg.Foreground(colBg3).Width(innerW).Render(strings.Repeat("─", innerW))
 
 	// ── Buttons ──
 	btnW := (innerW - 1) / 2
@@ -2044,9 +3362,9 @@ func (m rootModel) renderConfirmDialog(base string) string {
 		noBtn,
 	)
 
-	empty := bg.Copy().Width(innerW).Render("")
+	empty := bg.Width(innerW).Render("")
 
-	body := bg.Copy().Width(innerW).Render(
+	body := bg.Width(innerW).Render(
 		lipgloss.JoinVertical(lipgloss.Left,
 			heading, warn, empty,
 			lipgloss.JoinVertical(lipgloss.Left, itemLines...),
@@ -2446,7 +3764,7 @@ func (m rootModel) renderUploadProgress(base string) string {
 	}
 
 	// ── Title ──
-	titleStr := bg.Copy().Foreground(colGreen).Bold(true).Width(innerW).Render("UPLOADING")
+	titleStr := bg.Foreground(colGreen).Bold(true).Width(innerW).Render("UPLOADING")
 
 	// ── Filename ──
 	fname := m.upload.filename
@@ -2457,7 +3775,7 @@ func (m rootModel) renderUploadProgress(base string) string {
 		rr := []rune(fname)
 		fname = "…" + string(rr[len(rr)-(innerW-1):])
 	}
-	fileLabel := bg.Copy().Foreground(colFg).Width(innerW).Render(fname)
+	fileLabel := bg.Foreground(colFg).Width(innerW).Render(fname)
 
 	// ── Progress bar: barW chars + 7-char label "100.0%" right-aligned ──
 	const pctW = 7 // " 100.0%"
@@ -2468,20 +3786,20 @@ func (m rootModel) renderUploadProgress(base string) string {
 	}
 	barFilled := lipgloss.NewStyle().Background(colBg2).Foreground(colGreen).Render(strings.Repeat("█", filled))
 	barEmpty := lipgloss.NewStyle().Background(colBg2).Foreground(colBg3).Render(strings.Repeat("░", barW-filled))
-	pctLabel := bg.Copy().Foreground(colComment).Width(pctW + 1).Align(lipgloss.Right).
+	pctLabel := bg.Foreground(colComment).Width(pctW + 1).Align(lipgloss.Right).
 		Render(fmt.Sprintf("%.1f%%", pct*100))
 	barLine := lipgloss.JoinHorizontal(lipgloss.Top, barFilled, barEmpty, pctLabel)
 
 	// ── Stats ──
 	transferred := fmt.Sprintf("%s / %s", formatBytes(m.upload.bytesRead), formatBytes(m.upload.total))
-	statsStr := bg.Copy().Foreground(colComment).Width(innerW).Render(transferred)
+	statsStr := bg.Foreground(colComment).Width(innerW).Render(transferred)
 
 	// ── Divider ──
-	divider := bg.Copy().Foreground(colBg3).Width(innerW).Render(strings.Repeat("─", innerW))
+	divider := bg.Foreground(colBg3).Width(innerW).Render(strings.Repeat("─", innerW))
 
-	hint := bg.Copy().Foreground(colComment).Faint(true).Width(innerW).Render("Esc not available during upload")
+	hint := bg.Foreground(colComment).Faint(true).Width(innerW).Render("Esc not available during upload")
 
-	body := bg.Copy().Width(innerW).Render(
+	body := bg.Width(innerW).Render(
 		lipgloss.JoinVertical(lipgloss.Left,
 			titleStr, fileLabel, "",
 			barLine, statsStr,
@@ -2767,7 +4085,10 @@ func (m rootModel) exportBillingCSV(numMonths int) tea.Cmd {
 		sort.Strings(cats)
 
 		// Build CSV
-		home, _ := os.UserHomeDir()
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return errMsg{fmt.Errorf("find home dir: %w", err)}
+		}
 		fname := fmt.Sprintf("scw-tui-export-%s.csv", time.Now().Format("200601"))
 		path := filepath.Join(home, fname)
 		f, err := os.Create(path)
@@ -2781,11 +4102,17 @@ func (m rootModel) exportBillingCSV(numMonths int) tea.Cmd {
 		// Header: Category, Jan-2025, Feb-2025, ...
 		header := []string{"Category"}
 		for _, p := range periods {
-			t, _ := time.Parse("2006-01", p)
-			header = append(header, t.Format("Jan 2006"))
+			t, err := time.Parse("2006-01", p)
+			if err != nil {
+				header = append(header, p)
+			} else {
+				header = append(header, t.Format("Jan 2006"))
+			}
 		}
 		header = append(header, "Total")
-		_ = w.Write(header)
+		if err := w.Write(header); err != nil {
+			return errMsg{fmt.Errorf("write header: %w", err)}
+		}
 
 		// Rows
 		for _, cat := range cats {
@@ -2797,7 +4124,9 @@ func (m rootModel) exportBillingCSV(numMonths int) tea.Cmd {
 				row = append(row, fmt.Sprintf("%.2f", v))
 			}
 			row = append(row, fmt.Sprintf("%.2f", total))
-			_ = w.Write(row)
+			if err := w.Write(row); err != nil {
+				return errMsg{fmt.Errorf("write row: %w", err)}
+			}
 		}
 
 		// Totals row
@@ -2812,9 +4141,14 @@ func (m rootModel) exportBillingCSV(numMonths int) tea.Cmd {
 			totRow = append(totRow, fmt.Sprintf("%.2f", sum))
 		}
 		totRow = append(totRow, fmt.Sprintf("%.2f", grandTotal))
-		_ = w.Write(totRow)
+		if err := w.Write(totRow); err != nil {
+			return errMsg{fmt.Errorf("write totals row: %w", err)}
+		}
 
 		w.Flush()
+		if err := w.Error(); err != nil {
+			return errMsg{fmt.Errorf("flush csv: %w", err)}
+		}
 		return billingExportDoneMsg{path: path}
 	}
 }
@@ -2880,7 +4214,7 @@ func (m rootModel) drawBilling() string {
 func (m rootModel) renderBillingTopBar() string {
 	left := lipgloss.NewStyle().Foreground(colComment).Render("BILLING ") +
 		lipgloss.NewStyle().Foreground(colPurple).Border(lipgloss.RoundedBorder()).
-			BorderForeground(colPurple).Padding(0, 1).Render(m.billingPeriod)
+			BorderForeground(colPurple).Padding(0, 1).Render(" "+m.billingPeriod+" ")
 
 	// Find current period total
 	total := 0.0
@@ -2891,14 +4225,14 @@ func (m rootModel) renderBillingTopBar() string {
 		}
 	}
 	totalStr := lipgloss.NewStyle().Foreground(colComment).Render("  Total excl. tax: ") +
-		lipgloss.NewStyle().Foreground(colGreen).Bold(true).Render(fmt.Sprintf("€%.2f", total))
+		lipgloss.NewStyle().Foreground(colGreen).Bold(true).Render(fmt.Sprintf(" €%.2f ", total))
 
 	exportMsg := ""
 	if m.billingExportMsg != "" {
-		exportMsg = "  " + lipgloss.NewStyle().Foreground(colGreen).Render("✓ "+m.billingExportMsg)
+		exportMsg = "  " + lipgloss.NewStyle().Foreground(colGreen).Render(" ✓ "+m.billingExportMsg+" ")
 	}
 
-	clock := lipgloss.NewStyle().Foreground(colComment).Render(time.Now().Format("15:04"))
+	clock := lipgloss.NewStyle().Foreground(colComment).Render(" " + time.Now().Format("15:04") + " ")
 	leftPart := lipgloss.JoinHorizontal(lipgloss.Center, left, totalStr, exportMsg)
 	spacer := strings.Repeat(" ", max(0, m.width-lipgloss.Width(leftPart)-lipgloss.Width(clock)-8))
 
@@ -2982,9 +4316,11 @@ func (m rootModel) renderBillingChart(w, h int) string {
 	// X-axis labels
 	xAxis := strings.Repeat(" ", 7)
 	for _, bm := range m.billingMonths {
-		label := bm.period[5:] // "MM"
-		t, _ := time.Parse("2006-01", bm.period)
-		label = t.Format("Jan")
+		label := bm.period
+		t, err := time.Parse("2006-01", bm.period)
+		if err == nil {
+			label = t.Format("Jan")
+		}
 		xAxis += padRight(label, barW)
 	}
 
