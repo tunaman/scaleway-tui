@@ -481,9 +481,16 @@ func (m rootModel) renderRegistry(totalW, height int, borderColor lipgloss.Color
 // ─────────────────────────────────────────────
 
 func (m rootModel) renderSecrets(totalW, height int, borderColor lipgloss.Color) string {
-	nameW := totalW - 28
-	versionsW := 8
-	statusW := 12
+	// scrollW=1 col reserved for the vertical scrollbar.
+	// Row layout: prefix(2) + nameW + versionsW + statusW + scrollbar(1) = innerW = totalW-2
+	const scrollW = 1
+	const versionsW = 8
+	const statusW = 12
+	innerW := totalW - 2
+	nameW := innerW - 2 - versionsW - statusW - scrollW
+	if nameW < 8 {
+		nameW = 8
+	}
 
 	visible := m.filteredSecrets()
 	listH := max(1, height-listRowOverhead)
@@ -495,39 +502,67 @@ func (m rootModel) renderSecrets(totalW, height int, borderColor lipgloss.Color)
 		scrollY = m.secretCursor
 	}
 
+	vScrollBar := renderVScrollBar(len(visible), scrollY, listH)
+
 	var rows []string
 	if len(visible) == 0 {
 		msg := "  No secrets found in this project."
 		if m.secretFilter != "" {
 			msg = "  No secrets match \"" + m.secretFilter + "\"."
 		}
-		rows = append(rows, lipgloss.NewStyle().Faint(true).Render(msg))
+		for si := 0; si < listH; si++ {
+			sb := ""
+			if si < len(vScrollBar) {
+				sb = vScrollBar[si]
+			}
+			if si == 0 {
+				rows = append(rows, lipgloss.NewStyle().Faint(true).Width(innerW-scrollW).Render(msg)+sb)
+			} else {
+				rows = append(rows, strings.Repeat(" ", innerW-scrollW)+sb)
+			}
+		}
 	}
+
 	end := min(scrollY+listH, len(visible))
 	for i := scrollY; i < end; i++ {
 		s := visible[i]
+		sb := ""
+		if i-scrollY < len(vScrollBar) {
+			sb = vScrollBar[i-scrollY]
+		}
 
 		statusColor := colGreen
 		if s.status == "locked" {
 			statusColor = colRed
 		}
 
-		var nameStr string
-		if m.secretFilter != "" {
-			nameStr = highlightMatch(s.name, m.secretFilter)
-		} else {
-			nameStr = lipgloss.NewStyle().Foreground(statusColor).Render(s.name)
-		}
 		versionsStr := fmt.Sprintf("%d", s.versionCount)
-		rowStr := padRight(nameStr, nameW) + padRight(versionsStr, versionsW) + padRight(s.status, statusW)
+		var nameCol string
+		if m.secretFilter != "" {
+			nameCol = padRight(highlightMatch(s.name, m.secretFilter), nameW)
+		} else if i == m.secretCursor {
+			nameCol = padRight(s.name, nameW) // plain — row style's Foreground applies uniformly
+		} else {
+			nameCol = lipgloss.NewStyle().Foreground(statusColor).Render(padRight(s.name, nameW))
+		}
+		rowStr := nameCol + padRight(versionsStr, versionsW) + padRight(s.status, statusW) + sb
 
 		if i == m.secretCursor {
 			rows = append(rows, lipgloss.NewStyle().
 				Background(colBg3).Foreground(colFg).Bold(true).
-				Width(totalW-4).Render("▌ "+rowStr))
+				Width(innerW).Render("▌ "+rowStr))
 		} else {
-			rows = append(rows, lipgloss.NewStyle().Foreground(colFg).Width(totalW-4).Render("  "+rowStr))
+			rows = append(rows, lipgloss.NewStyle().Foreground(colFg).Width(innerW).Render("  "+rowStr))
 		}
+	}
+
+	// Fill any remaining rows up to listH with blank lines + scrollbar chars.
+	for si := len(rows); si < listH; si++ {
+		sb := ""
+		if si < len(vScrollBar) {
+			sb = vScrollBar[si]
+		}
+		rows = append(rows, strings.Repeat(" ", innerW-scrollW)+sb)
 	}
 
 	var header string
