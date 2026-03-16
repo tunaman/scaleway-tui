@@ -123,6 +123,7 @@ func (m rootModel) renderNav(height int) string {
 		{"K8s Clusters"},
 		{"Billing"},
 		{"Container Registry"},
+		{"Secrets Manager"},
 	}
 
 	sectionHeader := lipgloss.NewStyle().Foreground(colComment).PaddingLeft(1).PaddingBottom(1).Render("SERVICES")
@@ -168,6 +169,8 @@ func (m rootModel) renderContent(height int) string {
 		return m.renderBillingPreview(contentW, height, focusColor)
 	case serviceRegistry:
 		return m.renderRegistry(contentW, height, focusColor)
+	case serviceSecrets:
+		return m.renderSecrets(contentW, height, focusColor)
 	}
 	return ""
 }
@@ -463,6 +466,88 @@ func (m rootModel) renderRegistry(totalW, height int, borderColor lipgloss.Color
 	panelTitle := "CONTAINER REGISTRY"
 	if m.registryFilter != "" {
 		panelTitle = fmt.Sprintf("CONTAINER REGISTRY  %d/%d", len(visible), len(m.registryNamespaces))
+	}
+
+	content := lipgloss.JoinVertical(lipgloss.Left,
+		header,
+		strings.Repeat("─", totalW-4),
+		lipgloss.JoinVertical(lipgloss.Left, rows...),
+	)
+	return panelBox(panelTitle, totalW, height, borderColor, content)
+}
+
+// ─────────────────────────────────────────────
+// Secrets Manager view
+// ─────────────────────────────────────────────
+
+func (m rootModel) renderSecrets(totalW, height int, borderColor lipgloss.Color) string {
+	nameW := totalW - 28
+	versionsW := 8
+	statusW := 12
+
+	visible := m.filteredSecrets()
+	listH := max(1, height-listRowOverhead)
+	scrollY := m.secretScrollY
+	if m.secretCursor >= scrollY+listH {
+		scrollY = m.secretCursor - listH + 1
+	}
+	if m.secretCursor < scrollY {
+		scrollY = m.secretCursor
+	}
+
+	var rows []string
+	if len(visible) == 0 {
+		msg := "  No secrets found in this project."
+		if m.secretFilter != "" {
+			msg = "  No secrets match \"" + m.secretFilter + "\"."
+		}
+		rows = append(rows, lipgloss.NewStyle().Faint(true).Render(msg))
+	}
+	end := min(scrollY+listH, len(visible))
+	for i := scrollY; i < end; i++ {
+		s := visible[i]
+
+		statusColor := colGreen
+		if s.status == "locked" {
+			statusColor = colRed
+		}
+
+		var nameStr string
+		if m.secretFilter != "" {
+			nameStr = highlightMatch(s.name, m.secretFilter)
+		} else {
+			nameStr = lipgloss.NewStyle().Foreground(statusColor).Render(s.name)
+		}
+		versionsStr := fmt.Sprintf("%d", s.versionCount)
+		rowStr := padRight(nameStr, nameW) + padRight(versionsStr, versionsW) + padRight(s.status, statusW)
+
+		if i == m.secretCursor {
+			rows = append(rows, lipgloss.NewStyle().
+				Background(colBg3).Foreground(colFg).Bold(true).
+				Width(totalW-4).Render("▌ "+rowStr))
+		} else {
+			rows = append(rows, lipgloss.NewStyle().Foreground(colFg).Width(totalW-4).Render("  "+rowStr))
+		}
+	}
+
+	var header string
+	switch {
+	case m.secretFiltering:
+		header = lipgloss.NewStyle().Foreground(colComment).Render("/") +
+			lipgloss.NewStyle().Foreground(colFg).Render(m.secretFilter) +
+			lipgloss.NewStyle().Foreground(colGreen).Render("▌")
+	case m.secretFilter != "":
+		header = lipgloss.NewStyle().Foreground(colYellow).Render("/ "+m.secretFilter) +
+			lipgloss.NewStyle().Foreground(colComment).Faint(true).Render("  Esc to clear")
+	default:
+		header = "  " + lipgloss.NewStyle().Foreground(colComment).Bold(true).Render(
+			padRight("NAME", nameW)+padRight("VERS", versionsW)+padRight("STATUS", statusW),
+		)
+	}
+
+	panelTitle := "SECRETS MANAGER"
+	if m.secretFilter != "" {
+		panelTitle = fmt.Sprintf("SECRETS MANAGER  %d/%d", len(visible), len(m.secrets))
 	}
 
 	content := lipgloss.JoinVertical(lipgloss.Left,

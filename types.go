@@ -66,6 +66,25 @@ type projectItem struct {
 	id   string
 }
 
+type secretItem struct {
+	id           string
+	name         string
+	status       string
+	versionCount uint32
+	description  string
+	updatedAt    time.Time
+	createdAt    time.Time
+}
+
+type secretVersion struct {
+	revision    uint32
+	status      string
+	description string
+	latest      bool
+	createdAt   time.Time
+	updatedAt   time.Time
+}
+
 // ─────────────────────────────────────────────
 // Tea messages
 // ─────────────────────────────────────────────
@@ -75,6 +94,7 @@ type dataMsg struct {
 	clusters           []cluster
 	projects           []projectItem
 	registryNamespaces []registryNamespace
+	secrets            []secretItem
 }
 
 type sizeMsg struct {
@@ -101,6 +121,8 @@ const (
 	inputModeBucket inputMode = iota
 	inputModeFolder
 	inputModeUpload
+	inputModeSecretNewVersion
+	inputModeSecretUpdateDesc
 )
 
 // createDoneMsg is sent after a successful create/upload operation.
@@ -134,6 +156,19 @@ type registryTagsMsg struct {
 	imageID string
 	tags    []registryTag
 }
+
+type secretVersionsMsg struct {
+	secret   secretItem
+	versions []secretVersion
+}
+
+type secretVersionContentMsg struct {
+	revision uint32
+	content  string
+}
+
+type secretVersionCreatedMsg struct{}
+type secretVersionUpdatedMsg struct{}
 
 type errMsg struct{ err error }
 

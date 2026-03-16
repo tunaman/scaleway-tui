@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -65,6 +66,37 @@ func (m rootModel) filteredBuckets() []bucket {
 	for _, b := range m.buckets {
 		if strings.Contains(strings.ToLower(b.name), needle) {
 			out = append(out, b)
+		}
+	}
+	return out
+}
+
+func (m rootModel) filteredSecrets() []secretItem {
+	if m.secretFilter == "" {
+		return m.secrets
+	}
+	needle := strings.ToLower(m.secretFilter)
+	var out []secretItem
+	for _, s := range m.secrets {
+		if strings.Contains(strings.ToLower(s.name), needle) {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+func (m rootModel) filteredSecretVersions() []secretVersion {
+	if m.secBrowserFilter == "" {
+		return m.secBrowserVersions
+	}
+	needle := strings.ToLower(m.secBrowserFilter)
+	var out []secretVersion
+	for _, v := range m.secBrowserVersions {
+		revStr := fmt.Sprintf("%d", v.revision)
+		if strings.Contains(revStr, needle) ||
+			strings.Contains(strings.ToLower(v.description), needle) ||
+			strings.Contains(strings.ToLower(v.status), needle) {
+			out = append(out, v)
 		}
 	}
 	return out
