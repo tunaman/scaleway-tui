@@ -40,7 +40,7 @@ jobs:
         run: |
           go mod tidy
           go build -ldflags="-s -w -X main.version=${{ github.ref_name }}" \
-            -o dist/scw-tui-${{ matrix.goos }}-${{ matrix.goarch }} main.go
+            -o dist/scw-tui-${{ matrix.goos }}-${{ matrix.goarch }} .
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

@@ -51,6 +51,9 @@ const (
 	listRowOverhead = 4 // top-border(1) + header(1) + divider(1) + bottom-border(1)
 )
 
+// version is set at build time via -ldflags "-X main.version=<tag>".
+var version = "dev"
+
 // ─────────────────────────────────────────────
 // Dracula palette
 // ─────────────────────────────────────────────
@@ -206,7 +209,7 @@ type rootModel struct {
 // ─────────────────────────────────────────────
 
 func (m rootModel) Init() tea.Cmd {
-	return tea.Batch(m.spin.Tick, tea.EnableBracketedPaste, tea.SetWindowTitle("Scaleway TUI"))
+	return tea.Batch(m.spin.Tick, tea.EnableBracketedPaste, tea.SetWindowTitle("Scaleway TUI "+version))
 }
 
 // ─────────────────────────────────────────────
