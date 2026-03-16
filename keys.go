@@ -36,7 +36,7 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 		case "enter":
 			val := strings.TrimSpace(m.input.value)
-			if val == "" {
+			if val == "" && m.input.mode != inputModeSecretUpdateDesc {
 				m.input.errStr = "Name cannot be empty."
 				return m, nil
 			}
@@ -49,6 +49,19 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.input.active = false
 				m.loading = true
 				return m, tea.Batch(m.spin.Tick, m.createFolder(m.browserBucket, m.browserPrefix, val))
+			case inputModeSecretNewVersion:
+				m.input.active = false
+				m.loading = true
+				return m, tea.Batch(m.spin.Tick, m.createSecretVersion(m.secBrowserSecret.id, val))
+			case inputModeSecretUpdateDesc:
+				m.input.active = false
+				m.loading = true
+				visible := m.filteredSecretVersions()
+				if len(visible) > 0 && m.secBrowserCursor < len(visible) {
+					rev := visible[m.secBrowserCursor].revision
+					return m, tea.Batch(m.spin.Tick, m.updateSecretVersionDesc(m.secBrowserSecret.id, rev, val))
+				}
+				return m, nil
 			case inputModeUpload:
 				// Extract filename now so the overlay shows it immediately.
 				base := val
@@ -168,6 +181,18 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	// ── Secret content overlay: close on any key ──
+	if m.secShowContent {
+		switch msg.String() {
+		case "ctrl+c":
+			return m, tea.Quit
+		default:
+			m.secShowContent = false
+			m.secContent = ""
+		}
+		return m, nil
+	}
+
 	// ── Tag action overlay: pull instructions ──
 	if m.regTagActionOverlay {
 		switch msg.String() {
@@ -302,17 +327,91 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	// ── Secrets dashboard filter mode ──
+	if m.secretFiltering {
+		switch msg.String() {
+		case "esc":
+			m.secretFiltering = false
+			m.secretFilter = ""
+			m.secretCursor = 0
+			m.secretScrollY = 0
+		case "enter":
+			m.secretFiltering = false
+			m.secretCursor = 0
+			m.secretScrollY = 0
+		case "backspace", "ctrl+h":
+			if len([]rune(m.secretFilter)) > 0 {
+				runes := []rune(m.secretFilter)
+				m.secretFilter = string(runes[:len(runes)-1])
+			} else {
+				m.secretFiltering = false
+			}
+			m.secretCursor = 0
+			m.secretScrollY = 0
+		case "up", "k":
+			return m.handleUp()
+		case "down", "j":
+			return m.handleDown()
+		default:
+			if len(msg.Runes) == 1 {
+				m.secretFilter += string(msg.Runes)
+				m.secretCursor = 0
+				m.secretScrollY = 0
+			}
+		}
+		return m, nil
+	}
+	// ── Secrets browser filter mode ──
+	if m.secBrowserFiltering {
+		switch msg.String() {
+		case "esc":
+			m.secBrowserFiltering = false
+			m.secBrowserFilter = ""
+			m.secBrowserCursor = 0
+			m.secBrowserScrollY = 0
+		case "enter":
+			m.secBrowserFiltering = false
+			m.secBrowserCursor = 0
+			m.secBrowserScrollY = 0
+		case "backspace", "ctrl+h":
+			if len([]rune(m.secBrowserFilter)) > 0 {
+				runes := []rune(m.secBrowserFilter)
+				m.secBrowserFilter = string(runes[:len(runes)-1])
+			} else {
+				m.secBrowserFiltering = false
+			}
+			m.secBrowserCursor = 0
+			m.secBrowserScrollY = 0
+		case "up", "k":
+			return m.handleUp()
+		case "down", "j":
+			return m.handleDown()
+		default:
+			if len(msg.Runes) == 1 {
+				m.secBrowserFilter += string(msg.Runes)
+				m.secBrowserCursor = 0
+				m.secBrowserScrollY = 0
+			}
+		}
+		return m, nil
+	}
 
 	switch msg.String() {
 	case "ctrl+c", "q":
-		if m.showConfirm || m.input.active {
+		if m.showConfirm || m.input.active || m.secShowContent {
 			// Dismiss overlays rather than quitting.
 			m.showConfirm = false
 			m.input.active = false
+			m.secShowContent = false
 			return m, nil
 		}
 		return m, tea.Quit
 	case "esc":
+		if m.secShowContent {
+			m.secShowContent = false
+			m.secContent = ""
+			return m, nil
+		}
 		if m.showConfirm {
 			m.showConfirm = false
 			m.confirmItems = nil
@@ -370,6 +469,20 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.bucketScrollY = 0
 			return m, nil
 		}
+		// Clear secrets browser filter if active.
+		if m.secBrowserFilter != "" {
+			m.secBrowserFilter = ""
+			m.secBrowserCursor = 0
+			m.secBrowserScrollY = 0
+			return m, nil
+		}
+		// Clear secrets dashboard filter if active.
+		if m.secretFilter != "" {
+			m.secretFilter = ""
+			m.secretCursor = 0
+			m.secretScrollY = 0
+			return m, nil
+		}
 		return m.handleEsc()
 	case "f5":
 		if !m.loading {
@@ -382,6 +495,9 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			if m.state == stateRegistryBrowser {
 				return m, tea.Batch(m.spin.Tick, m.fetchRegistryImages(m.regBrowserNamespace))
+			}
+			if m.state == stateSecretsBrowser {
+				return m, tea.Batch(m.spin.Tick, m.fetchSecretVersions(m.secBrowserSecret))
 			}
 			return m, tea.Batch(m.spin.Tick, m.fetchData())
 		}
@@ -403,6 +519,18 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.registryFilter = ""
 			m.registryCursor = 0
 			m.registryScrollY = 0
+		}
+		if m.state == stateDashboard && m.focus == focusContent && m.activeService == serviceSecrets {
+			m.secretFiltering = true
+			m.secretFilter = ""
+			m.secretCursor = 0
+			m.secretScrollY = 0
+		}
+		if m.state == stateSecretsBrowser && !m.loading {
+			m.secBrowserFiltering = true
+			m.secBrowserFilter = ""
+			m.secBrowserCursor = 0
+			m.secBrowserScrollY = 0
 		}
 		if m.state == stateRegistryBrowser && m.regBrowserFocus == 1 && !m.loading {
 			m.regTagFiltering = true
@@ -445,6 +573,13 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.regConfirmDeleteTags = false
 			m.regConfirmTagsToDelete = nil
 		}
+		if m.state == stateSecretsBrowser && !m.loading {
+			m.input.active = true
+			m.input.mode = inputModeSecretNewVersion
+			m.input.value = ""
+			m.input.cursor = 0
+			m.input.errStr = ""
+		}
 	case "c", "C":
 		if m.loading || m.showConfirm {
 			return m, nil
@@ -469,6 +604,16 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.input.value = ""
 			m.input.cursor = 0
 			m.input.errStr = ""
+		}
+		if m.state == stateSecretsBrowser && !m.loading {
+			visible := m.filteredSecretVersions()
+			if len(visible) > 0 && m.secBrowserCursor < len(visible) {
+				m.input.active = true
+				m.input.mode = inputModeSecretUpdateDesc
+				m.input.value = ""
+				m.input.cursor = 0
+				m.input.errStr = ""
+			}
 		}
 	case "d", "D":
 		if m.state == stateObjectBrowser && !m.loading && !m.showConfirm {
@@ -637,6 +782,13 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m rootModel) handleEsc() (rootModel, tea.Cmd) {
 	switch m.state {
+	case stateSecretsBrowser:
+		m.state = stateDashboard
+		m.activeService = serviceSecrets
+		m.secBrowserFilter = ""
+		m.secBrowserFiltering = false
+		m.secShowContent = false
+		m.secContent = ""
 	case stateRegistryBrowser:
 		m.state = stateDashboard
 		m.activeService = serviceRegistry
@@ -721,6 +873,15 @@ func (m rootModel) handleUp() (rootModel, tea.Cmd) {
 	case m.state == stateDashboard && m.focus == focusNav:
 		m.activeService = (m.activeService - 1 + serviceCount) % serviceCount
 
+	case m.state == stateSecretsBrowser:
+		visible := m.filteredSecretVersions()
+		if len(visible) > 0 && m.secBrowserCursor > 0 {
+			m.secBrowserCursor--
+			if m.secBrowserCursor < m.secBrowserScrollY {
+				m.secBrowserScrollY = m.secBrowserCursor
+			}
+		}
+
 	case m.state == stateDashboard && m.focus == focusContent:
 		fb := m.filteredBuckets()
 		if m.activeService == serviceObjectStorage && len(fb) > 0 {
@@ -742,6 +903,15 @@ func (m rootModel) handleUp() (rootModel, tea.Cmd) {
 				m.registryCursor--
 				if m.registryCursor < m.registryScrollY {
 					m.registryScrollY = m.registryCursor
+				}
+			}
+		}
+		if m.activeService == serviceSecrets {
+			fs := m.filteredSecrets()
+			if len(fs) > 0 && m.secretCursor > 0 {
+				m.secretCursor--
+				if m.secretCursor < m.secretScrollY {
+					m.secretScrollY = m.secretCursor
 				}
 			}
 		}
@@ -788,6 +958,12 @@ func (m rootModel) handleDown() (rootModel, tea.Cmd) {
 	case m.state == stateDashboard && m.focus == focusNav:
 		m.activeService = (m.activeService + 1) % serviceCount
 
+	case m.state == stateSecretsBrowser:
+		visible := m.filteredSecretVersions()
+		if len(visible) > 0 && m.secBrowserCursor < len(visible)-1 {
+			m.secBrowserCursor++
+		}
+
 	case m.state == stateDashboard && m.focus == focusContent:
 		fb := m.filteredBuckets()
 		if m.activeService == serviceObjectStorage && len(fb) > 0 {
@@ -804,6 +980,12 @@ func (m rootModel) handleDown() (rootModel, tea.Cmd) {
 		if m.activeService == serviceRegistry && len(m.registryNamespaces) > 0 {
 			if m.registryCursor < len(m.registryNamespaces)-1 {
 				m.registryCursor++
+			}
+		}
+		if m.activeService == serviceSecrets {
+			fs := m.filteredSecrets()
+			if len(fs) > 0 && m.secretCursor < len(fs)-1 {
+				m.secretCursor++
 			}
 		}
 	}
@@ -844,6 +1026,21 @@ func (m rootModel) handleEnter() (rootModel, tea.Cmd) {
 		m.activeService == serviceBilling:
 		m.loading = true
 		return m, tea.Batch(m.spin.Tick, m.fetchBillingOverview(m.billingPeriod))
+
+	case m.state == stateDashboard && m.focus == focusContent &&
+		m.activeService == serviceSecrets && len(m.filteredSecrets()) > 0:
+		fs := m.filteredSecrets()
+		s := fs[m.secretCursor]
+		m.loading = true
+		return m, tea.Batch(m.spin.Tick, m.fetchSecretVersions(s))
+
+	case m.state == stateSecretsBrowser && !m.loading:
+		visible := m.filteredSecretVersions()
+		if len(visible) > 0 && m.secBrowserCursor < len(visible) {
+			rev := visible[m.secBrowserCursor].revision
+			m.loading = true
+			return m, tea.Batch(m.spin.Tick, m.accessSecretVersion(m.secBrowserSecret.id, rev))
+		}
 
 	case m.state == stateRegistryBrowser && m.regBrowserFocus == 1:
 		visible := m.filteredRegistryImages()

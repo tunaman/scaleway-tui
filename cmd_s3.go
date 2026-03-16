@@ -13,6 +13,7 @@ import (
 	"github.com/scaleway/scaleway-sdk-go/api/account/v3"
 	"github.com/scaleway/scaleway-sdk-go/api/k8s/v1"
 	"github.com/scaleway/scaleway-sdk-go/api/registry/v1"
+	"github.com/scaleway/scaleway-sdk-go/api/secret/v1beta1"
 	"github.com/scaleway/scaleway-sdk-go/scw"
 )
 
@@ -117,7 +118,45 @@ func (m rootModel) fetchData() tea.Cmd {
 			rReq.Page = scw.Int32Ptr(rPage)
 		}
 
-		return dataMsg{buckets: buckets, clusters: clusters, projects: projects, registryNamespaces: registryNamespaces}
+		// ── Secrets ──
+		var secrets []secretItem
+		secAPI := secret.NewAPI(m.scwClient)
+		sReq := &secret.ListSecretsRequest{Region: region}
+		if m.projectID != "" {
+			sReq.ProjectID = &m.projectID
+		}
+		var sPage int32 = 1
+		for {
+			resp, err := secAPI.ListSecrets(sReq)
+			if err != nil {
+				break // non-fatal: secrets may not be enabled
+			}
+			for _, s := range resp.Secrets {
+				si := secretItem{
+					id:           s.ID,
+					name:         s.Name,
+					status:       string(s.Status),
+					versionCount: s.VersionCount,
+				}
+				if s.Description != nil {
+					si.description = *s.Description
+				}
+				if s.CreatedAt != nil {
+					si.createdAt = *s.CreatedAt
+				}
+				if s.UpdatedAt != nil {
+					si.updatedAt = *s.UpdatedAt
+				}
+				secrets = append(secrets, si)
+			}
+			if uint64(len(secrets)) >= resp.TotalCount {
+				break
+			}
+			sPage++
+			sReq.Page = scw.Int32Ptr(sPage)
+		}
+
+		return dataMsg{buckets: buckets, clusters: clusters, projects: projects, registryNamespaces: registryNamespaces, secrets: secrets}
 	}
 }
 

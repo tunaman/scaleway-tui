@@ -123,6 +123,7 @@ func (m rootModel) renderNav(height int) string {
 		{"K8s Clusters"},
 		{"Billing"},
 		{"Container Registry"},
+		{"Secrets Manager"},
 	}
 
 	sectionHeader := lipgloss.NewStyle().Foreground(colComment).PaddingLeft(1).PaddingBottom(1).Render("SERVICES")
@@ -168,6 +169,8 @@ func (m rootModel) renderContent(height int) string {
 		return m.renderBillingPreview(contentW, height, focusColor)
 	case serviceRegistry:
 		return m.renderRegistry(contentW, height, focusColor)
+	case serviceSecrets:
+		return m.renderSecrets(contentW, height, focusColor)
 	}
 	return ""
 }
@@ -463,6 +466,123 @@ func (m rootModel) renderRegistry(totalW, height int, borderColor lipgloss.Color
 	panelTitle := "CONTAINER REGISTRY"
 	if m.registryFilter != "" {
 		panelTitle = fmt.Sprintf("CONTAINER REGISTRY  %d/%d", len(visible), len(m.registryNamespaces))
+	}
+
+	content := lipgloss.JoinVertical(lipgloss.Left,
+		header,
+		strings.Repeat("─", totalW-4),
+		lipgloss.JoinVertical(lipgloss.Left, rows...),
+	)
+	return panelBox(panelTitle, totalW, height, borderColor, content)
+}
+
+// ─────────────────────────────────────────────
+// Secrets Manager view
+// ─────────────────────────────────────────────
+
+func (m rootModel) renderSecrets(totalW, height int, borderColor lipgloss.Color) string {
+	// scrollW=1 col reserved for the vertical scrollbar.
+	// Row layout: prefix(2) + nameW + versionsW + statusW + scrollbar(1) = innerW = totalW-2
+	const scrollW = 1
+	const versionsW = 8
+	const statusW = 12
+	innerW := totalW - 2
+	nameW := innerW - 2 - versionsW - statusW - scrollW
+	if nameW < 8 {
+		nameW = 8
+	}
+
+	visible := m.filteredSecrets()
+	listH := max(1, height-listRowOverhead)
+	scrollY := m.secretScrollY
+	if m.secretCursor >= scrollY+listH {
+		scrollY = m.secretCursor - listH + 1
+	}
+	if m.secretCursor < scrollY {
+		scrollY = m.secretCursor
+	}
+
+	vScrollBar := renderVScrollBar(len(visible), scrollY, listH)
+
+	var rows []string
+	if len(visible) == 0 {
+		msg := "  No secrets found in this project."
+		if m.secretFilter != "" {
+			msg = "  No secrets match \"" + m.secretFilter + "\"."
+		}
+		for si := 0; si < listH; si++ {
+			sb := ""
+			if si < len(vScrollBar) {
+				sb = vScrollBar[si]
+			}
+			if si == 0 {
+				rows = append(rows, lipgloss.NewStyle().Faint(true).Width(innerW-scrollW).Render(msg)+sb)
+			} else {
+				rows = append(rows, strings.Repeat(" ", innerW-scrollW)+sb)
+			}
+		}
+	}
+
+	end := min(scrollY+listH, len(visible))
+	for i := scrollY; i < end; i++ {
+		s := visible[i]
+		sb := ""
+		if i-scrollY < len(vScrollBar) {
+			sb = vScrollBar[i-scrollY]
+		}
+
+		statusColor := colGreen
+		if s.status == "locked" {
+			statusColor = colRed
+		}
+
+		versionsStr := fmt.Sprintf("%d", s.versionCount)
+		var nameCol string
+		if m.secretFilter != "" {
+			nameCol = padRight(highlightMatch(s.name, m.secretFilter), nameW)
+		} else if i == m.secretCursor {
+			nameCol = padRight(s.name, nameW) // plain — row style's Foreground applies uniformly
+		} else {
+			nameCol = lipgloss.NewStyle().Foreground(statusColor).Render(padRight(s.name, nameW))
+		}
+		rowStr := nameCol + padRight(versionsStr, versionsW) + padRight(s.status, statusW) + sb
+
+		if i == m.secretCursor {
+			rows = append(rows, lipgloss.NewStyle().
+				Background(colBg3).Foreground(colFg).Bold(true).
+				Width(innerW).Render("▌ "+rowStr))
+		} else {
+			rows = append(rows, lipgloss.NewStyle().Foreground(colFg).Width(innerW).Render("  "+rowStr))
+		}
+	}
+
+	// Fill any remaining rows up to listH with blank lines + scrollbar chars.
+	for si := len(rows); si < listH; si++ {
+		sb := ""
+		if si < len(vScrollBar) {
+			sb = vScrollBar[si]
+		}
+		rows = append(rows, strings.Repeat(" ", innerW-scrollW)+sb)
+	}
+
+	var header string
+	switch {
+	case m.secretFiltering:
+		header = lipgloss.NewStyle().Foreground(colComment).Render("/") +
+			lipgloss.NewStyle().Foreground(colFg).Render(m.secretFilter) +
+			lipgloss.NewStyle().Foreground(colGreen).Render("▌")
+	case m.secretFilter != "":
+		header = lipgloss.NewStyle().Foreground(colYellow).Render("/ "+m.secretFilter) +
+			lipgloss.NewStyle().Foreground(colComment).Faint(true).Render("  Esc to clear")
+	default:
+		header = "  " + lipgloss.NewStyle().Foreground(colComment).Bold(true).Render(
+			padRight("NAME", nameW)+padRight("VERS", versionsW)+padRight("STATUS", statusW),
+		)
+	}
+
+	panelTitle := "SECRETS MANAGER"
+	if m.secretFilter != "" {
+		panelTitle = fmt.Sprintf("SECRETS MANAGER  %d/%d", len(visible), len(m.secrets))
 	}
 
 	content := lipgloss.JoinVertical(lipgloss.Left,

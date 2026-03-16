@@ -21,6 +21,7 @@ const (
 	stateObjectBrowser
 	stateBilling
 	stateRegistryBrowser
+	stateSecretsBrowser
 )
 
 // pickerAction is what Enter triggers on the profile picker's action buttons.
@@ -40,6 +41,7 @@ const (
 	serviceK8s
 	serviceBilling
 	serviceRegistry
+	serviceSecrets
 	serviceCount
 )
 
@@ -184,6 +186,24 @@ type rootModel struct {
 		bytesRead int64
 		total     int64
 	}
+
+	// Secrets (dashboard)
+	secrets        []secretItem
+	secretCursor   int
+	secretScrollY  int
+	secretFilter   string
+	secretFiltering bool
+
+	// Secrets browser state (stateSecretsBrowser)
+	secBrowserSecret    secretItem
+	secBrowserVersions  []secretVersion
+	secBrowserCursor    int
+	secBrowserScrollY   int
+	secBrowserFilter    string
+	secBrowserFiltering bool
+	secShowContent      bool
+	secContent          string
+	secContentRevision  uint32
 
 	// Clients (nil until a profile is activated)
 	minioClient *minio.Client
@@ -350,6 +370,34 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.regTagSelected = nil
 		return m, nil
 
+	case secretVersionsMsg:
+		m.loading = false
+		m.secBrowserSecret = msg.secret
+		m.secBrowserVersions = msg.versions
+		m.secBrowserCursor = 0
+		m.secBrowserScrollY = 0
+		m.secBrowserFilter = ""
+		m.secBrowserFiltering = false
+		m.secShowContent = false
+		m.secContent = ""
+		m.state = stateSecretsBrowser
+		return m, nil
+
+	case secretVersionContentMsg:
+		m.loading = false
+		m.secContent = msg.content
+		m.secContentRevision = msg.revision
+		m.secShowContent = true
+		return m, nil
+
+	case secretVersionCreatedMsg:
+		m.loading = true
+		return m, tea.Batch(m.spin.Tick, m.fetchSecretVersions(m.secBrowserSecret))
+
+	case secretVersionUpdatedMsg:
+		m.loading = true
+		return m, tea.Batch(m.spin.Tick, m.fetchSecretVersions(m.secBrowserSecret))
+
 	case bucketContentsMsg:
 		m.loading = false
 		m.browserBucket = msg.bucket
@@ -368,12 +416,15 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.clusters = msg.clusters
 		m.projects = msg.projects
 		m.registryNamespaces = msg.registryNamespaces
+		m.secrets = msg.secrets
 		m.bucketCursor = 0
 		m.bucketScrollY = 0
 		m.bucketScrollX = 0
 		m.clusterCursor = 0
 		m.registryCursor = 0
 		m.registryScrollY = 0
+		m.secretCursor = 0
+		m.secretScrollY = 0
 		m.prevBucketSel = -1
 		// Update the display name now that we've resolved it.
 		if len(msg.projects) > 0 {
@@ -426,6 +477,8 @@ func (m rootModel) View() string {
 		return m.drawObjectBrowser()
 	case stateRegistryBrowser:
 		return m.drawRegistryBrowser()
+	case stateSecretsBrowser:
+		return m.drawSecretsBrowser()
 	case stateBilling:
 		return m.drawBilling()
 	default:

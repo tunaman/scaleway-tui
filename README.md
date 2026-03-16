@@ -15,9 +15,11 @@ A keyboard-driven terminal UI for managing your [Scaleway](https://www.scaleway.
 ## Features
 
 - **Multi-profile support** — pick any profile from your existing `~/.config/scw/config.yaml`
-- **Object Storage browser** — navigate buckets and folders, view object sizes, upload, download, create folders/buckets, and delete objects
+- **Object Storage browser** — navigate buckets and folders, view object sizes, upload, create folders/buckets, and delete objects
 - **Kubernetes overview** — list Kapsule clusters with status and version
-- **Billing view** — inspect current-period costs per project
+- **Container Registry browser** — browse namespaces, images, and tags; copy pull commands
+- **Secrets Manager** — list secrets, browse versions, view secret content, add new versions, and update version descriptions
+- **Billing view** — inspect current-period costs per project, export to CSV
 - **Project switcher** — switch between Scaleway projects without leaving the TUI
 - **Vim-style keyboard navigation** — `j/k`, `/` to filter, and single-key actions throughout
 
@@ -56,19 +58,47 @@ On first launch you will be presented with a profile picker. Select a profile an
 
 ### Keyboard shortcuts
 
+#### Global
+
 | Key | Action |
 | ----- | -------- |
 | `j` / `↓` | Move down |
 | `k` / `↑` | Move up |
 | `Enter` | Select / open |
-| `Tab` | Switch focus pane |
 | `/` | Filter list |
-| `c` | Create bucket / folder |
-| `u` | Upload file |
-| `d` | Delete selected object |
-| `a` | Select all |
-| `Esc` | Back / cancel |
+| `F5` | Refresh |
+| `Esc` | Back / cancel / clear filter |
 | `q` | Quit |
+
+#### Object Storage
+
+| Key | Action |
+| ----- | -------- |
+| `Tab` | Switch focus pane |
+| `c` | Create bucket (dashboard) / folder (browser) |
+| `u` | Upload file |
+| `d` | Delete selected object(s) |
+| `a` | Select / deselect all |
+| `Space` | Toggle selection |
+| `←` / `→` | Scroll name column |
+
+#### Container Registry
+
+| Key | Action |
+| ----- | -------- |
+| `Tab` | Switch between images and tags panes |
+| `Enter` | Show pull command for selected tag |
+| `Space` | Toggle tag selection |
+| `A` | Select / deselect all tags |
+| `D` | Delete selected tag(s) |
+
+#### Secrets Manager
+
+| Key | Action |
+| ----- | -------- |
+| `Enter` | View secret content for selected version |
+| `n` | Add a new secret version |
+| `u` | Update description of selected version |
 
 ## Configuration
 
@@ -96,5 +126,5 @@ The codebase is a single `package main` split across focused files (`main.go`, `
 | [charmbracelet/bubbletea](https://github.com/charmbracelet/bubbletea) | TUI framework |
 | [charmbracelet/bubbles](https://github.com/charmbracelet/bubbles) | UI components (spinner, etc.) |
 | [charmbracelet/lipgloss](https://github.com/charmbracelet/lipgloss) | Terminal styling (Dracula theme) |
-| [scaleway/scaleway-sdk-go](https://github.com/scaleway/scaleway-sdk-go) | Scaleway API (K8s, billing, account) |
+| [scaleway/scaleway-sdk-go](https://github.com/scaleway/scaleway-sdk-go) | Scaleway API (K8s, billing, account, registry, secrets) |
 | [minio/minio-go](https://github.com/minio/minio-go) | S3-compatible object storage |
