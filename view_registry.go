@@ -276,10 +276,12 @@ func (m rootModel) renderRegistryVersionPane(paneW, paneH int) string {
 	case m.regBrowserFocus == 1:
 		const hintStr = "Enter  Pull"
 		const hintW = len(hintStr)
-		headerStr = lipgloss.NewStyle().Foreground(colComment).Bold(true).Render(padRight("TAG", tagW+chkW-hintW)) +
+		headerStr = strings.Repeat(" ", prefixW) +
+			lipgloss.NewStyle().Foreground(colComment).Bold(true).Render(padRight("TAG", tagW+chkW-hintW)) +
 			lipgloss.NewStyle().Foreground(colComment).Faint(true).Render(hintStr)
 	default:
-		headerStr = lipgloss.NewStyle().Foreground(colComment).Bold(true).Render(padRight("TAG", tagW+chkW))
+		headerStr = strings.Repeat(" ", prefixW) +
+			lipgloss.NewStyle().Foreground(colComment).Bold(true).Render(padRight("TAG", tagW+chkW))
 	}
 
 	var rows []string
