@@ -60,31 +60,6 @@ func panelBox(title string, w, h int, borderColor lipgloss.Color, content string
 	return sb.String()
 }
 
-// renderBar draws a btop-style █░ usage bar with a label and percentage.
-func renderBar(label string, value, maxVal float64, width int) string {
-	if maxVal <= 0 {
-		maxVal = 1
-	}
-	pct := value / maxVal
-	if pct > 1 {
-		pct = 1
-	}
-	barW := width - 2
-	filled := int(pct * float64(barW))
-	empty := barW - filled
-	barColor := colGreen
-	switch {
-	case pct > 0.85:
-		barColor = colRed
-	case pct > 0.60:
-		barColor = colYellow
-	}
-	bar := lipgloss.NewStyle().Foreground(barColor).Render(strings.Repeat("█", filled)) +
-		lipgloss.NewStyle().Foreground(colBg3).Render(strings.Repeat("░", empty))
-	pctStr := lipgloss.NewStyle().Foreground(colComment).Render(fmt.Sprintf(" %.0f%%", pct*100))
-	return lipgloss.NewStyle().Foreground(colComment).Render(label+": ") + "\n" + bar + pctStr
-}
-
 // renderVScrollBar returns a slice of single-character strings representing a
 // minimal vertical scrollbar, one string per visible row.
 func renderVScrollBar(total, offset, visible int) []string {

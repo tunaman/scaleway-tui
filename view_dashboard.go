@@ -241,7 +241,7 @@ func (m rootModel) renderBuckets(totalW, height int, borderColor lipgloss.Color)
 		if i-scrollY < len(vScrollBar) {
 			sb = vScrollBar[i-scrollY]
 		}
-		rowStr := padRight(name, nameW) + sb
+		var rowStr string
 		if i == m.bucketCursor {
 			rowStr = lipgloss.NewStyle().
 				Background(colBg3).Foreground(colFg).Bold(true).

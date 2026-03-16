@@ -242,7 +242,7 @@ func (m rootModel) uploadFile(bucket, prefix, localPath string) tea.Cmd {
 
 		info, err := f.Stat()
 		if err != nil {
-			f.Close()
+			_ = f.Close()
 			return errMsg{fmt.Errorf("stat file: %w", err)}
 		}
 		totalBytes := info.Size()
@@ -258,7 +258,7 @@ func (m rootModel) uploadFile(bucket, prefix, localPath string) tea.Cmd {
 		teaProgram.Send(uploadProgressMsg{filename: base, bytesRead: 0, total: totalBytes})
 
 		go func() {
-			defer f.Close()
+			defer func() { _ = f.Close() }()
 
 			pr := &progressReader{
 				r:        f,

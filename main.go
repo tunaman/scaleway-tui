@@ -192,8 +192,7 @@ type rootModel struct {
 	billingPeriod     string // "YYYY-MM" currently shown
 	billingCursor     int    // row cursor in detail table
 	billingScrollY    int
-	billingExportPath string // set after a successful export
-	billingExportMsg  string // confirmation message to show
+	billingExportMsg string // confirmation message to show
 
 	// Widgets
 	spin spinner.Model

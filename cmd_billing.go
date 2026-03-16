@@ -156,7 +156,7 @@ func (m rootModel) exportBillingCSV(numMonths int) tea.Cmd {
 		if err != nil {
 			return errMsg{fmt.Errorf("create csv: %w", err)}
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 
 		w := csv.NewWriter(f)
 
