@@ -87,7 +87,7 @@ make clean
 go mod tidy
 ```
 
-All application logic lives in `main.go`. See [.github/copilot-instructions.md](.github/copilot-instructions.md) for an architectural overview.
+The codebase is a single `package main` split across focused files (`main.go`, `keys.go`, `filter.go`, `util.go`, `types.go`, `config.go`, `cmd_*.go`, `view_*.go`). See [CLAUDE.md](CLAUDE.md) for an architectural overview.
 
 ## Tech stack
 
