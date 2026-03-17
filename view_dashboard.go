@@ -538,10 +538,10 @@ func (m rootModel) renderSecrets(totalW, height int, borderColor lipgloss.Color)
 
 		versionsStr := fmt.Sprintf("%d", s.versionCount)
 		var nameCol string
-		if m.secretFilter != "" {
+		if i == m.secretCursor {
+			nameCol = padRight(s.name, nameW) // plain — keeps Background(colBg3) unbroken across the full row
+		} else if m.secretFilter != "" {
 			nameCol = padRight(highlightMatch(s.name, m.secretFilter), nameW)
-		} else if i == m.secretCursor {
-			nameCol = padRight(s.name, nameW) // plain — row style's Foreground applies uniformly
 		} else {
 			nameCol = lipgloss.NewStyle().Foreground(statusColor).Render(padRight(s.name, nameW))
 		}
