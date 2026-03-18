@@ -205,9 +205,10 @@ type billingExportDoneMsg struct{ path string }
 
 // clientsReadyMsg is sent after a profile is selected and clients are built.
 type clientsReadyMsg struct {
-	scwClient        *scw.Client
-	minioClient      *minio.Client
-	profileName      string
-	region           string
-	defaultProjectID string // read directly from the profile, no API call needed
+	scwClient              *scw.Client
+	minioClient            *minio.Client
+	profileName            string
+	region                 string
+	defaultProjectID       string // read directly from the profile, no API call needed
+	defaultOrganizationID  string // read directly from the profile, used for billing API
 }

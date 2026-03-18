@@ -597,19 +597,13 @@ func (m rootModel) renderSecrets(totalW, height int, borderColor lipgloss.Color)
 // Billing preview (dashboard content area)
 // ─────────────────────────────────────────────
 
-// renderBillingPreview is shown in the dashboard content area when Billing
-// service is selected. It shows a "Press Enter to open" prompt with last total.
+// renderBillingPreview is shown briefly in the dashboard content area while
+// billing data is loading (auto-triggered on nav selection).
 func (m rootModel) renderBillingPreview(totalW, height int, borderColor lipgloss.Color) string {
-	var lines []string
-	lines = append(lines, lipgloss.NewStyle().Foreground(colComment).Render("Press Enter to open billing details"))
-	if len(m.billingMonths) > 0 {
-		last := m.billingMonths[len(m.billingMonths)-1]
-		lines = append(lines, "")
-		lines = append(lines, lipgloss.NewStyle().Foreground(colComment).Render("Last period: ")+
-			lipgloss.NewStyle().Foreground(colFg).Render(last.period))
-		lines = append(lines, lipgloss.NewStyle().Foreground(colComment).Render("Total excl. tax: ")+
-			lipgloss.NewStyle().Foreground(colGreen).Bold(true).Render(fmt.Sprintf("€%.2f", last.totalExTax)))
-	}
-	return panelBox("BILLING", totalW, height, borderColor,
-		lipgloss.JoinVertical(lipgloss.Left, lines...))
+	inner := lipgloss.Place(
+		totalW-4, height-listRowOverhead,
+		lipgloss.Center, lipgloss.Center,
+		m.spin.View()+" Loading billing data…",
+	)
+	return panelBox("BILLING", totalW, height, borderColor, inner)
 }

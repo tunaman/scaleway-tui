@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -20,6 +21,13 @@ import (
 // fetchBillingOverview fetches the last 6 months of totals plus the detail
 // rows for the given period (defaults to current month if empty).
 func (m rootModel) fetchBillingOverview(period string) tea.Cmd {
+	orgID := m.organizationID
+	defaultProjectID := m.projectID
+	// Specific project filter (0 = all, 1..n = project index)
+	filterProjectID := ""
+	if m.billingProjectIdx > 0 && m.billingProjectIdx <= len(m.projects) {
+		filterProjectID = m.projects[m.billingProjectIdx-1].id
+	}
 	return func() tea.Msg {
 		api := billing.NewAPI(m.scwClient)
 
@@ -37,10 +45,18 @@ func (m rootModel) fetchBillingOverview(period string) tea.Cmd {
 			}
 			var page int32 = 1
 			for {
-				resp, err := api.ListConsumptions(&billing.ListConsumptionsRequest{
+				req := &billing.ListConsumptionsRequest{
 					BillingPeriod: &p,
 					Page:          scw.Int32Ptr(page),
-				})
+				}
+				if filterProjectID != "" {
+					req.ProjectID = &filterProjectID
+				} else if orgID != "" {
+					req.OrganizationID = &orgID
+				} else if defaultProjectID != "" {
+					req.ProjectID = &defaultProjectID
+				}
+				resp, err := api.ListConsumptions(req)
 				if err != nil {
 					break // billing perms may be restricted — skip silently
 				}
@@ -58,7 +74,7 @@ func (m rootModel) fetchBillingOverview(period string) tea.Cmd {
 		}
 
 		// ── Detail rows for the selected period ──
-		detail, err := fetchConsumptionDetail(api, period)
+		detail, err := fetchConsumptionDetail(api, period, orgID, defaultProjectID, filterProjectID)
 		if err != nil {
 			return errMsg{fmt.Errorf("billing detail: %w", err)}
 		}
@@ -68,23 +84,30 @@ func (m rootModel) fetchBillingOverview(period string) tea.Cmd {
 }
 
 // fetchConsumptionDetail returns sorted consumption rows for a given period.
-func fetchConsumptionDetail(api *billing.API, period string) ([]billingConsumptionRow, error) {
+func fetchConsumptionDetail(api *billing.API, period, orgID, defaultProjectID, filterProjectID string) ([]billingConsumptionRow, error) {
 	var rows []billingConsumptionRow
 	var page int32 = 1
 	for {
-		resp, err := api.ListConsumptions(&billing.ListConsumptionsRequest{
+		req := &billing.ListConsumptionsRequest{
 			BillingPeriod: &period,
 			Page:          scw.Int32Ptr(page),
-		})
+		}
+		if filterProjectID != "" {
+			req.ProjectID = &filterProjectID
+		} else if orgID != "" {
+			req.OrganizationID = &orgID
+		} else if defaultProjectID != "" {
+			req.ProjectID = &defaultProjectID
+		}
+		resp, err := api.ListConsumptions(req)
 		if err != nil {
 			return nil, err
 		}
 		for _, c := range resp.Consumptions {
 			rows = append(rows, billingConsumptionRow{
-				category:    c.CategoryName,
-				product:     c.ProductName,
-				projectName: c.ProjectID, // resolved to name if possible
-				valueEUR:    moneyToFloat(c.Value),
+				category: c.CategoryName,
+				product:  c.ProductName,
+				valueEUR: moneyToFloat(c.Value),
 			})
 		}
 		if uint64(len(resp.Consumptions)) >= uint64(resp.TotalCount) {
@@ -92,22 +115,60 @@ func fetchConsumptionDetail(api *billing.API, period string) ([]billingConsumpti
 		}
 		page++
 	}
-	// Sort by value descending
-	sort.Slice(rows, func(i, j int) bool {
-		return rows[i].valueEUR > rows[j].valueEUR
+
+	// Aggregate duplicate category+product combinations (same product across zones/resources)
+	type rowKey struct{ category, product string }
+	totals := make(map[rowKey]float64)
+	var order []rowKey
+	seen := make(map[rowKey]bool)
+	for _, r := range rows {
+		k := rowKey{r.category, r.product}
+		totals[k] += r.valueEUR
+		if !seen[k] {
+			order = append(order, k)
+			seen[k] = true
+		}
+	}
+	aggregated := make([]billingConsumptionRow, 0, len(order))
+	for _, k := range order {
+		aggregated = append(aggregated, billingConsumptionRow{
+			category: k.category,
+			product:  k.product,
+			valueEUR: totals[k],
+		})
+	}
+
+	// Sort by category alphabetically, then by value descending within each category
+	sort.Slice(aggregated, func(i, j int) bool {
+		if aggregated[i].category != aggregated[j].category {
+			return aggregated[i].category < aggregated[j].category
+		}
+		return aggregated[i].valueEUR > aggregated[j].valueEUR
 	})
-	return rows, nil
+	return aggregated, nil
 }
 
-// exportBillingCSV fetches the last N months and writes a pivot CSV to ~/scw-tui-export-YYYYMM.csv
-func (m rootModel) exportBillingCSV(numMonths int) tea.Cmd {
+// exportBillingCSV fetches billing data for [from..to] and writes a CSV to ~/
+func (m rootModel) exportBillingCSV(from, to string) tea.Cmd {
+	orgID := m.organizationID
+	defaultProjectID := m.projectID
+	filterProjectID := ""
+	projectName := "all"
+	if m.billingProjectIdx > 0 && m.billingProjectIdx <= len(m.projects) {
+		p := m.projects[m.billingProjectIdx-1]
+		filterProjectID = p.id
+		projectName = p.name
+	}
 	return func() tea.Msg {
 		api := billing.NewAPI(m.scwClient)
 
-		// Collect all periods
-		periods := make([]string, numMonths)
-		for i := 0; i < numMonths; i++ {
-			periods[numMonths-1-i] = time.Now().AddDate(0, -i, 0).Format("2006-01")
+		// Build ordered list of periods from → to inclusive.
+		var periods []string
+		for cur := from; cur <= to; cur = nextMonth(cur) {
+			periods = append(periods, cur)
+			if len(periods) > 36 { // safety cap
+				break
+			}
 		}
 
 		// category → period → total
@@ -119,10 +180,18 @@ func (m rootModel) exportBillingCSV(numMonths int) tea.Cmd {
 			var page int32 = 1
 			period := p
 			for {
-				resp, err := api.ListConsumptions(&billing.ListConsumptionsRequest{
+				req := &billing.ListConsumptionsRequest{
 					BillingPeriod: &period,
 					Page:          scw.Int32Ptr(page),
-				})
+				}
+				if filterProjectID != "" {
+					req.ProjectID = &filterProjectID
+				} else if orgID != "" {
+					req.OrganizationID = &orgID
+				} else if defaultProjectID != "" {
+					req.ProjectID = &defaultProjectID
+				}
+				resp, err := api.ListConsumptions(req)
 				if err != nil {
 					break
 				}
@@ -145,12 +214,13 @@ func (m rootModel) exportBillingCSV(numMonths int) tea.Cmd {
 		}
 		sort.Strings(cats)
 
-		// Build CSV
+		// Build CSV file
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return errMsg{fmt.Errorf("find home dir: %w", err)}
 		}
-		fname := fmt.Sprintf("scw-tui-export-%s.csv", time.Now().Format("200601"))
+		safeName := strings.NewReplacer(" ", "-", "/", "-").Replace(strings.ToLower(projectName))
+		fname := fmt.Sprintf("scw-tui-export-%s-%s-%s.csv", safeName, from, to)
 		path := filepath.Join(home, fname)
 		f, err := os.Create(path)
 		if err != nil {
@@ -160,7 +230,18 @@ func (m rootModel) exportBillingCSV(numMonths int) tea.Cmd {
 
 		w := csv.NewWriter(f)
 
-		// Header: Category, Jan-2025, Feb-2025, ...
+		// Metadata rows
+		if err := w.Write([]string{"Project", projectName}); err != nil {
+			return errMsg{fmt.Errorf("write metadata: %w", err)}
+		}
+		if err := w.Write([]string{"Period", from + " to " + to}); err != nil {
+			return errMsg{fmt.Errorf("write metadata: %w", err)}
+		}
+		if err := w.Write(nil); err != nil { // blank separator row
+			return errMsg{fmt.Errorf("write separator: %w", err)}
+		}
+
+		// Column header: Category, Jan 2025, ..., Total
 		header := []string{"Category"}
 		for _, p := range periods {
 			t, err := time.Parse("2006-01", p)
@@ -175,7 +256,7 @@ func (m rootModel) exportBillingCSV(numMonths int) tea.Cmd {
 			return errMsg{fmt.Errorf("write header: %w", err)}
 		}
 
-		// Rows
+		// Data rows
 		for _, cat := range cats {
 			row := []string{cat}
 			var total float64
@@ -190,7 +271,7 @@ func (m rootModel) exportBillingCSV(numMonths int) tea.Cmd {
 			}
 		}
 
-		// Totals row
+		// Grand total row
 		totRow := []string{"TOTAL"}
 		var grandTotal float64
 		for _, p := range periods {

@@ -206,16 +206,24 @@ type rootModel struct {
 	secContentRevision  uint32
 
 	// Clients (nil until a profile is activated)
-	minioClient *minio.Client
-	scwClient   *scw.Client
+	minioClient    *minio.Client
+	scwClient      *scw.Client
+	organizationID string // default org from active profile, used for billing
 
 	// Billing state (stateBilling)
-	billingMonths     []billingMonth
-	billingDetail     []billingConsumptionRow
-	billingPeriod     string // "YYYY-MM" currently shown
-	billingCursor     int    // row cursor in detail table
-	billingScrollY    int
-	billingExportMsg string // confirmation message to show
+	billingMonths      []billingMonth
+	billingDetail      []billingConsumptionRow
+	billingPeriod      string // "YYYY-MM" currently shown
+	billingCursor      int    // row cursor in detail table
+	billingScrollY     int
+	billingExportMsg     string // confirmation message to show
+	billingExportOverlay bool
+	billingExportFrom    string // "YYYY-MM"
+	billingExportTo      string // "YYYY-MM"
+	billingExportField   int    // 0 = from focused, 1 = to focused
+	billingProjectIdx     int  // 0 = all (org level), 1..n = m.projects[idx-1]
+	billingProjectOverlay bool // project picker overlay visible
+	billingProjectCursor  int  // cursor inside the overlay list
 
 	// Widgets
 	spin spinner.Model
@@ -259,6 +267,7 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.defaultProjectID != "" {
 			m.project = msg.defaultProjectID // replaced with a real name once we have it
 		}
+		m.organizationID = msg.defaultOrganizationID
 		m.state = stateDashboard
 		m.loading = true
 		return m, tea.Batch(m.spin.Tick, m.fetchData())
