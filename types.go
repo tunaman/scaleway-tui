@@ -187,10 +187,9 @@ type billingMonth struct {
 
 // billingConsumptionRow is one row in the detail table.
 type billingConsumptionRow struct {
-	category    string
-	product     string
-	projectName string
-	valueEUR    float64
+	category string
+	product  string
+	valueEUR float64
 }
 
 // billingOverviewMsg carries the data for the billing overview screen.
@@ -205,9 +204,10 @@ type billingExportDoneMsg struct{ path string }
 
 // clientsReadyMsg is sent after a profile is selected and clients are built.
 type clientsReadyMsg struct {
-	scwClient        *scw.Client
-	minioClient      *minio.Client
-	profileName      string
-	region           string
-	defaultProjectID string // read directly from the profile, no API call needed
+	scwClient              *scw.Client
+	minioClient            *minio.Client
+	profileName            string
+	region                 string
+	defaultProjectID       string // read directly from the profile, no API call needed
+	defaultOrganizationID  string // read directly from the profile, used for billing API
 }

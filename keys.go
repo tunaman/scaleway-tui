@@ -181,6 +181,74 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	// ── Billing project picker overlay ──
+	if m.billingProjectOverlay {
+		total := len(m.projects) + 1 // 0=all, 1..n=project
+		switch msg.String() {
+		case "ctrl+c":
+			return m, tea.Quit
+		case "esc":
+			m.billingProjectOverlay = false
+		case "up", "k":
+			if m.billingProjectCursor > 0 {
+				m.billingProjectCursor--
+			}
+		case "down", "j":
+			if m.billingProjectCursor < total-1 {
+				m.billingProjectCursor++
+			}
+		case "enter":
+			m.billingProjectOverlay = false
+			if m.billingProjectCursor != m.billingProjectIdx {
+				m.billingProjectIdx = m.billingProjectCursor
+				m.loading = true
+				m.billingExportMsg = ""
+				return m, tea.Batch(m.spin.Tick, m.fetchBillingOverview(m.billingPeriod))
+			}
+		}
+		return m, nil
+	}
+
+	// ── Billing export date picker overlay ──
+	if m.billingExportOverlay {
+		switch msg.String() {
+		case "ctrl+c":
+			return m, tea.Quit
+		case "esc":
+			m.billingExportOverlay = false
+		case "tab":
+			m.billingExportField = 1 - m.billingExportField
+		case "left", "h":
+			if m.billingExportField == 0 {
+				m.billingExportFrom = prevMonth(m.billingExportFrom)
+			} else {
+				prev := prevMonth(m.billingExportTo)
+				if prev >= m.billingExportFrom {
+					m.billingExportTo = prev
+				}
+			}
+		case "right", "l":
+			now := time.Now().Format("2006-01")
+			if m.billingExportField == 0 {
+				next := nextMonth(m.billingExportFrom)
+				if next <= m.billingExportTo {
+					m.billingExportFrom = next
+				}
+			} else {
+				next := nextMonth(m.billingExportTo)
+				if next <= now {
+					m.billingExportTo = next
+				}
+			}
+		case "enter":
+			m.billingExportOverlay = false
+			m.loading = true
+			m.billingExportMsg = ""
+			return m, tea.Batch(m.spin.Tick, m.exportBillingCSV(m.billingExportFrom, m.billingExportTo))
+		}
+		return m, nil
+	}
+
 	// ── Secret content overlay: close on any key ──
 	if m.secShowContent {
 		switch msg.String() {
@@ -502,10 +570,16 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(m.spin.Tick, m.fetchData())
 		}
 	case "e", "E":
+		if m.state == stateBilling && !m.loading && !m.billingExportOverlay {
+			m.billingExportFrom = time.Now().AddDate(0, -11, 0).Format("2006-01")
+			m.billingExportTo = time.Now().Format("2006-01")
+			m.billingExportField = 0
+			m.billingExportOverlay = true
+		}
+	case "p", "P":
 		if m.state == stateBilling && !m.loading {
-			m.loading = true
-			m.billingExportMsg = ""
-			return m, tea.Batch(m.spin.Tick, m.exportBillingCSV(12))
+			m.billingProjectOverlay = true
+			m.billingProjectCursor = m.billingProjectIdx
 		}
 	case "/":
 		if m.state == stateDashboard && m.focus == focusContent && m.activeService == serviceObjectStorage {
@@ -872,6 +946,11 @@ func (m rootModel) handleUp() (rootModel, tea.Cmd) {
 
 	case m.state == stateDashboard && m.focus == focusNav:
 		m.activeService = (m.activeService - 1 + serviceCount) % serviceCount
+		if m.activeService == serviceBilling && !m.loading {
+			m.loading = true
+			m.billingExportMsg = ""
+			return m, tea.Batch(m.spin.Tick, m.fetchBillingOverview(m.billingPeriod))
+		}
 
 	case m.state == stateSecretsBrowser:
 		visible := m.filteredSecretVersions()
@@ -957,6 +1036,11 @@ func (m rootModel) handleDown() (rootModel, tea.Cmd) {
 
 	case m.state == stateDashboard && m.focus == focusNav:
 		m.activeService = (m.activeService + 1) % serviceCount
+		if m.activeService == serviceBilling && !m.loading {
+			m.loading = true
+			m.billingExportMsg = ""
+			return m, tea.Batch(m.spin.Tick, m.fetchBillingOverview(m.billingPeriod))
+		}
 
 	case m.state == stateSecretsBrowser:
 		visible := m.filteredSecretVersions()
@@ -1076,18 +1160,26 @@ func (m rootModel) activateProfile(name string) tea.Cmd {
 		}
 		saveTUIConfig(tuiConfig{ActiveProfile: name})
 
-		// Read default_project_id directly from the profile — no API call needed.
+		// Read default_project_id and default_organization_id directly from
+		// the profile — no API call needed.
 		projectID := ""
-		if prof, err := m.scwCfg.GetProfile(name); err == nil && prof.DefaultProjectID != nil {
-			projectID = *prof.DefaultProjectID
+		orgID := ""
+		if prof, err := m.scwCfg.GetProfile(name); err == nil {
+			if prof.DefaultProjectID != nil {
+				projectID = *prof.DefaultProjectID
+			}
+			if prof.DefaultOrganizationID != nil {
+				orgID = *prof.DefaultOrganizationID
+			}
 		}
 
 		return clientsReadyMsg{
-			scwClient:        scwClient,
-			minioClient:      mc,
-			profileName:      name,
-			region:           region,
-			defaultProjectID: projectID,
+			scwClient:             scwClient,
+			minioClient:           mc,
+			profileName:           name,
+			region:                region,
+			defaultProjectID:      projectID,
+			defaultOrganizationID: orgID,
 		}
 	}
 }

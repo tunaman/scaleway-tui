@@ -28,20 +28,48 @@ func (m rootModel) fetchData() tea.Cmd {
 		var projects []projectItem
 		var registryNamespaces []registryNamespace
 
-		// ── Project name ──
-		// We skip ListProjects entirely (insufficient permissions) and instead
-		// use the default_project_id from the profile. We try a single GetProject
-		// call to resolve the human-readable name; if that also fails (same perm
-		// issue), we fall back to showing the raw ID — the rest of the app still
-		// works fine either way.
-		if m.projectID != "" {
-			pAPI := account.NewProjectAPI(m.scwClient)
+		// ── Projects ──
+		// Try ListProjects first (requires org ID + permissions). Falls back to
+		// GetProject for just the default project, and finally to the raw ID.
+		pAPI := account.NewProjectAPI(m.scwClient)
+		if m.organizationID != "" {
+			var page int32 = 1
+			for {
+				resp, err := pAPI.ListProjects(&account.ProjectAPIListProjectsRequest{
+					OrganizationID: m.organizationID,
+					OrderBy:        account.ListProjectsRequestOrderByNameAsc,
+					Page:           scw.Int32Ptr(page),
+				})
+				if err != nil {
+					break
+				}
+				for _, p := range resp.Projects {
+					projects = append(projects, projectItem{name: p.Name, id: p.ID})
+				}
+				if uint64(len(projects)) >= resp.TotalCount {
+					break
+				}
+				page++
+			}
+		}
+		// Filter out utility/infrastructure projects.
+		filtered := projects[:0]
+		for _, p := range projects {
+			lower := strings.ToLower(p.name)
+			if strings.Contains(lower, "terraform") || lower == "default" {
+				continue
+			}
+			filtered = append(filtered, p)
+		}
+		projects = filtered
+
+		// Fall back to default project if ListProjects failed or returned nothing.
+		if len(projects) == 0 && m.projectID != "" {
 			if resp, err := pAPI.GetProject(&account.ProjectAPIGetProjectRequest{
 				ProjectID: m.projectID,
 			}); err == nil {
 				projects = []projectItem{{name: resp.Name, id: resp.ID}}
 			} else {
-				// Perm denied on GetProject too — just show the ID.
 				projects = []projectItem{{name: m.projectID, id: m.projectID}}
 			}
 		}
