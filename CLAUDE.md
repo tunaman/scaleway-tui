@@ -25,7 +25,7 @@ The codebase is a single Go package (`package main`) split across these files:
 
 | File | Contents |
 |---|---|
-| `main.go` | Constants, Dracula palette, `rootModel` struct, `Init`, `Update`, `View`, `main` |
+| `main.go` | Constants, Dracula palette, `rootModel` struct (incl. billing + org state), `Init`, `Update`, `View`, `main` |
 | `types.go` | All data structs and tea message types |
 | `config.go` | `tuiConfig`, `loadTUIConfig`, `saveTUIConfig`, `buildClients` |
 | `keys.go` | `handleKey`, `handleEsc`, `handleUp`, `handleDown`, `handleEnter`, `activateProfile` |
@@ -33,7 +33,7 @@ The codebase is a single Go package (`package main`) split across these files:
 | `util.go` | `panelBox`, `padRight`, `renderVScrollBar`, `formatBytes`, `formatEuroShort`, `parentPrefix`, `prevMonth`, `nextMonth`, `moneyToFloat`, `min`, `max` |
 | `cmd_s3.go` | `fetchData`, `calculateSize`, `fetchBucketContents`, `createBucket/Folder`, `uploadFile`, `deleteEntries`, `progressReader` |
 | `cmd_registry.go` | `fetchRegistryImages/Tags`, `deleteRegistryTags` |
-| `cmd_billing.go` | `fetchBillingOverview`, `fetchConsumptionDetail`, `exportBillingCSV` |
+| `cmd_billing.go` | `fetchBillingOverview`, `fetchConsumptionDetail` (aggregates by category+product), `exportBillingCSV` (date-range, project-filtered) |
 | `cmd_secrets.go` | `fetchSecretVersions`, `accessSecretVersion`, `createSecretVersion`, `updateSecretVersionDesc` |
 | `view_picker.go` | `drawProfilePicker` |
 | `view_dashboard.go` | `drawDashboard`, `renderTopBar/StatusBar/Nav/Content`, `renderBuckets/Clusters/Registry/Secrets/BillingPreview` |
@@ -41,7 +41,7 @@ The codebase is a single Go package (`package main`) split across these files:
 | `view_s3.go` | `drawObjectBrowser`, browser render helpers, `renderConfirmDialog/UploadProgress` |
 | `view_registry.go` | `drawRegistryBrowser`, `renderRegistryVersionPane`, tag action/delete overlays |
 | `view_secrets.go` | `drawSecretsBrowser`, `renderSecretVersionDetailPane`, `renderSecretContentOverlay` |
-| `view_billing.go` | `drawBilling`, `renderBillingChart/Detail/TopBar/StatusBar` |
+| `view_billing.go` | `drawBilling`, `renderBillingChart/Detail/TopBar/StatusBar`, `renderBillingProjectOverlay`, `renderBillingExportOverlay` |
 
 ### Framework & Libraries
 - **Bubbletea** (charmbracelet) — MVU pattern: `Init` / `Update` / `View`
@@ -75,6 +75,8 @@ Overlays are rendered conditionally in `View()` on top of the base content using
 - `m.regTagActionOverlay` — registry pull-command dialog (`view_registry.go`)
 - `m.regConfirmDeleteTags` — registry tag delete confirmation (`view_registry.go`)
 - `m.secShowContent` — secrets version content viewer (`view_secrets.go`)
+- `m.billingProjectOverlay` — billing project picker (`view_billing.go`); `p/P` key
+- `m.billingExportOverlay` — billing CSV export date-range picker (`view_billing.go`); `e/E` key
 
 ### Client Initialization
 `buildClients()` constructs both `scwClient` and `minioClient` from a named Scaleway profile loaded via `scw.LoadConfig()`. Clients are stored in `rootModel` and captured by closure in async commands.

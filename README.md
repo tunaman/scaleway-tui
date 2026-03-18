@@ -19,7 +19,7 @@ A keyboard-driven terminal UI for managing your [Scaleway](https://www.scaleway.
 - **Kubernetes overview** — list Kapsule clusters with status and version
 - **Container Registry browser** — browse namespaces, images, and tags; copy pull commands
 - **Secrets Manager** — list secrets, browse versions, view secret content, add new versions, and update version descriptions
-- **Billing view** — inspect current-period costs per project, export to CSV
+- **Billing view** — inspect current-period costs, filter by project, export date-range to CSV
 - **Project switcher** — switch between Scaleway projects without leaving the TUI
 - **Vim-style keyboard navigation** — `j/k`, `/` to filter, and single-key actions throughout
 
@@ -91,6 +91,16 @@ On first launch you will be presented with a profile picker. Select a profile an
 | `Space` | Toggle tag selection |
 | `A` | Select / deselect all tags |
 | `D` | Delete selected tag(s) |
+
+#### Billing
+
+| Key | Action |
+| ----- | -------- |
+| `←` / `→` | Previous / next month |
+| `j` / `k` | Navigate detail rows |
+| `P` | Open project picker (filter by project or all) |
+| `E` | Open date-range picker and export to CSV |
+| `F5` | Refresh |
 
 #### Secrets Manager
 
