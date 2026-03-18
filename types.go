@@ -187,10 +187,9 @@ type billingMonth struct {
 
 // billingConsumptionRow is one row in the detail table.
 type billingConsumptionRow struct {
-	category    string
-	product     string
-	projectName string
-	valueEUR    float64
+	category string
+	product  string
+	valueEUR float64
 }
 
 // billingOverviewMsg carries the data for the billing overview screen.
