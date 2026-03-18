@@ -244,9 +244,9 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.regBrowserCursor = 0
 			m.regBrowserScrollY = 0
-		case "up", "k":
+		case "up":
 			return m.handleUp()
-		case "down", "j":
+		case "down":
 			return m.handleDown()
 		default:
 			if len(msg.Runes) == 1 {
@@ -280,9 +280,9 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.regBrowserTagCursor = 0
 			m.regBrowserTagScrollY = 0
-		case "up", "k":
+		case "up":
 			return m.handleUp()
-		case "down", "j":
+		case "down":
 			return m.handleDown()
 		default:
 			if len(msg.Runes) == 1 {
@@ -314,9 +314,9 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.registryCursor = 0
 			m.registryScrollY = 0
-		case "up", "k":
+		case "up":
 			return m.handleUp()
-		case "down", "j":
+		case "down":
 			return m.handleDown()
 		default:
 			if len(msg.Runes) == 1 {
@@ -348,9 +348,9 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.secretCursor = 0
 			m.secretScrollY = 0
-		case "up", "k":
+		case "up":
 			return m.handleUp()
-		case "down", "j":
+		case "down":
 			return m.handleDown()
 		default:
 			if len(msg.Runes) == 1 {
@@ -382,9 +382,9 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.secBrowserCursor = 0
 			m.secBrowserScrollY = 0
-		case "up", "k":
+		case "up":
 			return m.handleUp()
-		case "down", "j":
+		case "down":
 			return m.handleDown()
 		default:
 			if len(msg.Runes) == 1 {
