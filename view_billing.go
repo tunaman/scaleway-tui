@@ -95,11 +95,11 @@ func (m rootModel) renderBillingProjectOverlay() string {
 				Width(rowW).Render("▌ "+rowContent))
 		} else {
 			rows = append(rows, lipgloss.NewStyle().
-				Foreground(colFg).Width(rowW).Render("  "+rowContent))
+				Background(colBg2).Foreground(colFg).Width(rowW).Render("  "+rowContent))
 		}
 	}
 
-	hintRendered := lipgloss.NewStyle().Foreground(colComment).Faint(true).Render(hint)
+	hintRendered := lipgloss.NewStyle().Foreground(colComment).Background(colBg2).Faint(true).Width(rowW).Render(hint)
 
 	body := lipgloss.JoinVertical(lipgloss.Left,
 		append(rows, "", hintRendered)...,
@@ -320,7 +320,7 @@ func (m rootModel) renderBillingChart(w, h int) string {
 func (m rootModel) renderBillingDetail(w, h int) string {
 	const scrollW = 1
 	innerW := w - 2
-	catW := 20
+	catW := 22
 	valW := 10
 	prodW := max(1, innerW-2-catW-valW-scrollW) // prefix(2) + catW + prodW + valW + scrollW = innerW
 
