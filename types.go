@@ -31,9 +31,34 @@ type bucket struct {
 }
 
 type cluster struct {
+	id      string
 	name    string
 	status  string
 	version string
+	region  string
+}
+
+type nodePool struct {
+	id             string
+	name           string
+	status         string
+	nodeType       string
+	size           uint32
+	minSize        uint32
+	maxSize        uint32
+	version        string
+	autoscaling    bool
+	autohealing    bool
+	zone           string
+	rootVolumeType string
+	rootVolumeSize uint64 // bytes
+}
+
+type k8sNode struct {
+	id         string
+	name       string
+	status     string
+	publicIPv4 string
 }
 
 type registryNamespace struct {
@@ -169,6 +194,18 @@ type secretVersionContentMsg struct {
 
 type secretVersionCreatedMsg struct{}
 type secretVersionUpdatedMsg struct{}
+
+type k8sNodePoolsMsg struct {
+	cluster   cluster
+	nodePools []nodePool
+}
+
+type k8sNodesMsg struct {
+	nodePoolID string
+	nodes      []k8sNode
+}
+
+type k8sNodeRebootedMsg struct{}
 
 type errMsg struct{ err error }
 

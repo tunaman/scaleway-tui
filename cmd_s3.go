@@ -92,9 +92,11 @@ func (m rootModel) fetchData() tea.Cmd {
 			}
 			for _, cl := range resp.Clusters {
 				clusters = append(clusters, cluster{
+					id:      cl.ID,
 					name:    cl.Name,
 					status:  string(cl.Status),
 					version: cl.Version,
+					region:  string(cl.Region),
 				})
 			}
 			if uint64(len(clusters)) >= uint64(resp.TotalCount) {
