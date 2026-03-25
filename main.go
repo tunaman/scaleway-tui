@@ -22,6 +22,7 @@ const (
 	stateBilling
 	stateRegistryBrowser
 	stateSecretsBrowser
+	stateK8sBrowser
 )
 
 // pickerAction is what Enter triggers on the profile picker's action buttons.
@@ -122,6 +123,20 @@ type rootModel struct {
 	bucketFiltering bool   // true while the user is typing a filter
 	clusterCursor   int
 	prevBucketSel   int
+
+	// K8s browser state (stateK8sBrowser)
+	k8sBrowserCluster     cluster
+	k8sBrowserNodePools   []nodePool
+	k8sBrowserNodes       []k8sNode
+	k8sBrowserFocus       int // 0 = pool list, 1 = node list
+	k8sBrowserPoolCursor  int
+	k8sBrowserPoolScrollY int
+	k8sBrowserNodeCursor  int
+	k8sBrowserNodeScrollY int
+	k8sNodesLoading       bool
+	k8sConfirmReboot      bool
+	k8sRebootNodeID       string
+	k8sRebootNodeName     string
 	project         string
 	projectID       string
 
@@ -379,6 +394,42 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.regTagSelected = nil
 		return m, nil
 
+	case k8sNodePoolsMsg:
+		m.loading = false
+		m.k8sBrowserCluster = msg.cluster
+		m.k8sBrowserNodePools = msg.nodePools
+		m.k8sBrowserNodes = nil
+		m.k8sBrowserFocus = 0
+		m.k8sBrowserPoolCursor = 0
+		m.k8sBrowserPoolScrollY = 0
+		m.k8sBrowserNodeCursor = 0
+		m.k8sBrowserNodeScrollY = 0
+		m.k8sConfirmReboot = false
+		m.state = stateK8sBrowser
+		// Immediately fetch nodes for the first pool if present.
+		if len(msg.nodePools) > 0 {
+			m.k8sNodesLoading = true
+			return m, m.fetchNodes(msg.cluster, msg.nodePools[0].id)
+		}
+		return m, nil
+
+	case k8sNodesMsg:
+		m.k8sNodesLoading = false
+		m.k8sBrowserNodes = msg.nodes
+		m.k8sBrowserNodeCursor = 0
+		m.k8sBrowserNodeScrollY = 0
+		return m, nil
+
+	case k8sNodeRebootedMsg:
+		m.loading = false
+		// Refresh nodes for the selected pool.
+		if len(m.k8sBrowserNodePools) > 0 && m.k8sBrowserPoolCursor < len(m.k8sBrowserNodePools) {
+			poolID := m.k8sBrowserNodePools[m.k8sBrowserPoolCursor].id
+			m.k8sNodesLoading = true
+			return m, m.fetchNodes(m.k8sBrowserCluster, poolID)
+		}
+		return m, nil
+
 	case secretVersionsMsg:
 		m.loading = false
 		m.secBrowserSecret = msg.secret
@@ -486,6 +537,8 @@ func (m rootModel) View() string {
 		return m.drawObjectBrowser()
 	case stateRegistryBrowser:
 		return m.drawRegistryBrowser()
+	case stateK8sBrowser:
+		return m.drawK8sBrowser()
 	case stateSecretsBrowser:
 		return m.drawSecretsBrowser()
 	case stateBilling:

@@ -561,6 +561,14 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.state == stateBilling {
 				return m, tea.Batch(m.spin.Tick, m.fetchBillingOverview(m.billingPeriod))
 			}
+			if m.state == stateK8sBrowser {
+				m.k8sNodesLoading = true
+				poolID := ""
+				if len(m.k8sBrowserNodePools) > 0 && m.k8sBrowserPoolCursor < len(m.k8sBrowserNodePools) {
+					poolID = m.k8sBrowserNodePools[m.k8sBrowserPoolCursor].id
+				}
+				return m, m.fetchNodes(m.k8sBrowserCluster, poolID)
+			}
 			if m.state == stateRegistryBrowser {
 				return m, tea.Batch(m.spin.Tick, m.fetchRegistryImages(m.regBrowserNamespace))
 			}
@@ -636,6 +644,11 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.regConfirmTagsToDelete = nil
 			m.loading = true
 			return m, tea.Batch(m.spin.Tick, m.deleteRegistryTags(imageID, tags))
+		}
+		if m.state == stateK8sBrowser && m.k8sConfirmReboot {
+			m.k8sConfirmReboot = false
+			m.loading = true
+			return m, tea.Batch(m.spin.Tick, m.rebootNode(m.k8sRebootNodeID, m.k8sBrowserCluster.region))
 		}
 	case "n", "N":
 		if m.showConfirm {
@@ -730,10 +743,28 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			// Image-level deletion removed — only tag deletion is supported.
 		}
+	case "r", "R":
+		if m.state == stateK8sBrowser && m.k8sBrowserFocus == 1 && !m.loading && !m.k8sConfirmReboot {
+			if len(m.k8sBrowserNodes) > 0 && m.k8sBrowserNodeCursor < len(m.k8sBrowserNodes) {
+				n := m.k8sBrowserNodes[m.k8sBrowserNodeCursor]
+				m.k8sRebootNodeID = n.id
+				m.k8sRebootNodeName = n.name
+				m.k8sConfirmReboot = true
+			}
+		}
 	case "tab":
 		if m.state == stateDashboard {
 			m.focus = focusNav + (m.focus-focusNav+1)%2
 			m.showDropdown = false
+		}
+		if m.state == stateK8sBrowser && !m.loading && !m.k8sConfirmReboot {
+			if m.k8sBrowserFocus == 0 && len(m.k8sBrowserNodePools) > 0 {
+				m.k8sBrowserFocus = 1
+				m.k8sBrowserNodeCursor = 0
+				m.k8sBrowserNodeScrollY = 0
+			} else {
+				m.k8sBrowserFocus = 0
+			}
 		}
 		if m.state == stateRegistryBrowser && !m.loading && !m.regTagActionOverlay && !m.regConfirmDeleteTags {
 			imgs := m.filteredRegistryImages()
@@ -856,6 +887,20 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m rootModel) handleEsc() (rootModel, tea.Cmd) {
 	switch m.state {
+	case stateK8sBrowser:
+		if m.k8sConfirmReboot {
+			m.k8sConfirmReboot = false
+			return m, nil
+		}
+		if m.k8sBrowserFocus == 1 {
+			m.k8sBrowserFocus = 0
+			return m, nil
+		}
+		m.state = stateDashboard
+		m.activeService = serviceK8s
+		m.k8sBrowserNodes = nil
+		m.k8sBrowserNodePools = nil
+		m.k8sConfirmReboot = false
 	case stateSecretsBrowser:
 		m.state = stateDashboard
 		m.activeService = serviceSecrets
@@ -952,6 +997,25 @@ func (m rootModel) handleUp() (rootModel, tea.Cmd) {
 			return m, tea.Batch(m.spin.Tick, m.fetchBillingOverview(m.billingPeriod))
 		}
 
+	case m.state == stateK8sBrowser && !m.k8sConfirmReboot:
+		if m.k8sBrowserFocus == 0 {
+			if m.k8sBrowserPoolCursor > 0 {
+				m.k8sBrowserPoolCursor--
+				if m.k8sBrowserPoolCursor < m.k8sBrowserPoolScrollY {
+					m.k8sBrowserPoolScrollY = m.k8sBrowserPoolCursor
+				}
+				m.k8sNodesLoading = true
+				return m, m.fetchNodes(m.k8sBrowserCluster, m.k8sBrowserNodePools[m.k8sBrowserPoolCursor].id)
+			}
+		} else {
+			if m.k8sBrowserNodeCursor > 0 {
+				m.k8sBrowserNodeCursor--
+				if m.k8sBrowserNodeCursor < m.k8sBrowserNodeScrollY {
+					m.k8sBrowserNodeScrollY = m.k8sBrowserNodeCursor
+				}
+			}
+		}
+
 	case m.state == stateSecretsBrowser:
 		visible := m.filteredSecretVersions()
 		if len(visible) > 0 && m.secBrowserCursor > 0 {
@@ -1042,6 +1106,22 @@ func (m rootModel) handleDown() (rootModel, tea.Cmd) {
 			return m, tea.Batch(m.spin.Tick, m.fetchBillingOverview(m.billingPeriod))
 		}
 
+	case m.state == stateK8sBrowser && !m.k8sConfirmReboot:
+		if m.k8sBrowserFocus == 0 {
+			if m.k8sBrowserPoolCursor < len(m.k8sBrowserNodePools)-1 {
+				m.k8sBrowserPoolCursor++
+				if m.k8sBrowserPoolCursor >= m.k8sBrowserPoolScrollY+20 {
+					m.k8sBrowserPoolScrollY++
+				}
+				m.k8sNodesLoading = true
+				return m, m.fetchNodes(m.k8sBrowserCluster, m.k8sBrowserNodePools[m.k8sBrowserPoolCursor].id)
+			}
+		} else {
+			if m.k8sBrowserNodeCursor < len(m.k8sBrowserNodes)-1 {
+				m.k8sBrowserNodeCursor++
+			}
+		}
+
 	case m.state == stateSecretsBrowser:
 		visible := m.filteredSecretVersions()
 		if len(visible) > 0 && m.secBrowserCursor < len(visible)-1 {
@@ -1098,6 +1178,12 @@ func (m rootModel) handleEnter() (rootModel, tea.Cmd) {
 		b := fb[m.bucketCursor]
 		m.loading = true
 		return m, tea.Batch(m.spin.Tick, m.fetchBucketContents(b.name, ""))
+
+	case m.state == stateDashboard && m.focus == focusContent &&
+		m.activeService == serviceK8s && len(m.clusters) > 0:
+		cl := m.clusters[m.clusterCursor]
+		m.loading = true
+		return m, tea.Batch(m.spin.Tick, m.fetchNodePools(cl))
 
 	case m.state == stateDashboard && m.focus == focusContent &&
 		m.activeService == serviceRegistry && len(m.filteredRegistryNamespaces()) > 0:
