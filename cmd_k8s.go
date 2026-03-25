@@ -70,8 +70,8 @@ func (m rootModel) fetchNodes(cl cluster, poolID string) tea.Cmd {
 			}
 			for _, n := range resp.Nodes {
 				ipStr := ""
-				if n.PublicIPV4 != nil && len(*n.PublicIPV4) > 0 {
-					ipStr = n.PublicIPV4.String()
+				if n.PublicIPV4 != nil && len(*n.PublicIPV4) > 0 { //nolint:staticcheck
+					ipStr = n.PublicIPV4.String() //nolint:staticcheck
 				}
 				nodes = append(nodes, k8sNode{
 					id:         n.ID,
