@@ -206,6 +206,7 @@ type k8sNodesMsg struct {
 }
 
 type k8sNodeRebootedMsg struct{}
+type k8sNodePollTickMsg struct{}
 
 type errMsg struct{ err error }
 
@@ -241,10 +242,10 @@ type billingExportDoneMsg struct{ path string }
 
 // clientsReadyMsg is sent after a profile is selected and clients are built.
 type clientsReadyMsg struct {
-	scwClient              *scw.Client
-	minioClient            *minio.Client
-	profileName            string
-	region                 string
-	defaultProjectID       string // read directly from the profile, no API call needed
-	defaultOrganizationID  string // read directly from the profile, used for billing API
+	scwClient             *scw.Client
+	minioClient           *minio.Client
+	profileName           string
+	region                string
+	defaultProjectID      string // read directly from the profile, no API call needed
+	defaultOrganizationID string // read directly from the profile, used for billing API
 }

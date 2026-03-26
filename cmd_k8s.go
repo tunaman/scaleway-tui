@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/scaleway/scaleway-sdk-go/api/k8s/v1"
@@ -87,6 +88,15 @@ func (m rootModel) fetchNodes(cl cluster, poolID string) tea.Cmd {
 			req.Page = scw.Int32Ptr(page)
 		}
 		return k8sNodesMsg{nodePoolID: poolID, nodes: nodes}
+	}
+}
+
+// pollNodesAfterDelay waits 3 seconds then fires a k8sNodePollTickMsg,
+// used to refresh node status while any node is in "rebooting" state.
+func pollNodesAfterDelay() tea.Cmd {
+	return func() tea.Msg {
+		time.Sleep(3 * time.Second)
+		return k8sNodePollTickMsg{}
 	}
 }
 
