@@ -16,7 +16,7 @@ A keyboard-driven terminal UI for managing your [Scaleway](https://www.scaleway.
 
 - **Multi-profile support** — pick any profile from your existing `~/.config/scw/config.yaml`
 - **Object Storage browser** — navigate buckets and folders, view object sizes, upload, create folders/buckets, and delete objects
-- **Kubernetes overview** — list Kapsule clusters with status and version
+- **Kubernetes cluster browser** — list Kapsule clusters, browse node pools (autoscaling, node type, zone, volume), view nodes with status, and reboot nodes
 - **Container Registry browser** — browse namespaces, images, and tags; copy pull commands
 - **Secrets Manager** — list secrets, browse versions, view secret content, add new versions, and update version descriptions
 - **Billing view** — inspect current-period costs, filter by project, export date-range to CSV
@@ -91,6 +91,16 @@ On first launch you will be presented with a profile picker. Select a profile an
 | `Space` | Toggle tag selection |
 | `A` | Select / deselect all tags |
 | `D` | Delete selected tag(s) |
+
+#### Kubernetes
+
+| Key | Action |
+| ----- | -------- |
+| `Tab` | Switch between node pools and nodes panes |
+| `j` / `k` | Navigate rows |
+| `R` | Reboot selected node (with confirmation) |
+| `F5` | Refresh |
+| `Esc` | Back |
 
 #### Billing
 
