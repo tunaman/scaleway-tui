@@ -32,9 +32,11 @@ The codebase is a single Go package (`package main`) split across these files:
 | `filter.go` | `filteredBuckets/RegistryImages/RegistryTags/RegistryNamespaces/Secrets/SecretVersions`, `maybeCalculateSize` |
 | `util.go` | `panelBox`, `padRight`, `renderVScrollBar`, `formatBytes`, `formatEuroShort`, `parentPrefix`, `prevMonth`, `nextMonth`, `moneyToFloat`, `min`, `max` |
 | `cmd_s3.go` | `fetchData`, `calculateSize`, `fetchBucketContents`, `createBucket/Folder`, `uploadFile`, `deleteEntries`, `progressReader` |
+| `cmd_k8s.go` | `fetchNodePools`, `fetchNodes`, `rebootNode` |
 | `cmd_registry.go` | `fetchRegistryImages/Tags`, `deleteRegistryTags` |
 | `cmd_billing.go` | `fetchBillingOverview`, `fetchConsumptionDetail` (aggregates by category+product), `exportBillingCSV` (date-range, project-filtered) |
 | `cmd_secrets.go` | `fetchSecretVersions`, `accessSecretVersion`, `createSecretVersion`, `updateSecretVersionDesc` |
+| `view_k8s.go` | `drawK8sBrowser`, `renderK8sPoolPane`, `renderK8sNodePane`, `renderK8sRebootConfirm` |
 | `view_picker.go` | `drawProfilePicker` |
 | `view_dashboard.go` | `drawDashboard`, `renderTopBar/StatusBar/Nav/Content`, `renderBuckets/Clusters/Registry/Secrets/BillingPreview` |
 | `view_input.go` | `renderInputOverlay` — shared input dialog for all input modes |
@@ -53,7 +55,7 @@ The codebase is a single Go package (`package main`) split across these files:
 ### State Machine
 The entire UI state lives in the `rootModel` struct. Navigation is driven by two sets of `iota` constants:
 
-- `state` constants (`stateProfilePicker`, `stateDashboard`, `stateObjectBrowser`, `stateRegistryBrowser`, `stateSecretsBrowser`, `stateBilling`) — which screen is shown
+- `state` constants (`stateProfilePicker`, `stateDashboard`, `stateObjectBrowser`, `stateK8sBrowser`, `stateRegistryBrowser`, `stateSecretsBrowser`, `stateBilling`) — which screen is shown
 - `service` constants (`serviceObjectStorage`, `serviceK8s`, `serviceBilling`, `serviceRegistry`, `serviceSecrets`) — which service the dashboard cursor is on
 
 `View()` dispatches to a `draw*()` function based on the current `state`. `handleKey()` is the central keyboard dispatcher; it delegates to `handleUp()`, `handleDown()`, `handleEnter()`, `handleEsc()` which each contain state-specific logic.
@@ -63,6 +65,9 @@ All blocking work (API calls, file uploads) uses `tea.Cmd` closures that return 
 - `dataMsg` — initial data load
 - `bucketContentsMsg` — S3 directory listing
 - `uploadProgressMsg` — streamed upload progress
+- `k8sNodePoolsMsg` — node pools loaded for a cluster
+- `k8sNodesMsg` — nodes loaded for a pool
+- `k8sNodeRebootedMsg` — node reboot confirmed
 - `errMsg` — any async error
 
 Upload progress uses a global `teaProgram` variable to `Send()` messages from a background goroutine via the `progressReader` wrapper type.
@@ -75,6 +80,7 @@ Overlays are rendered conditionally in `View()` on top of the base content using
 - `m.regTagActionOverlay` — registry pull-command dialog (`view_registry.go`)
 - `m.regConfirmDeleteTags` — registry tag delete confirmation (`view_registry.go`)
 - `m.secShowContent` — secrets version content viewer (`view_secrets.go`)
+- `m.k8sConfirmReboot` — node reboot confirmation dialog (`view_k8s.go`); `R` key
 - `m.billingProjectOverlay` — billing project picker (`view_billing.go`); `p/P` key
 - `m.billingExportOverlay` — billing CSV export date-range picker (`view_billing.go`); `e/E` key
 
