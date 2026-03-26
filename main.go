@@ -137,6 +137,9 @@ type rootModel struct {
 	k8sConfirmReboot      bool
 	k8sRebootNodeID       string
 	k8sRebootNodeName     string
+	k8sConfirmReplace      bool
+	k8sReplaceNodeID       string
+	k8sReplaceNodeName     string
 	project         string
 	projectID       string
 
@@ -435,6 +438,16 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case k8sNodeRebootedMsg:
 		m.loading = false
 		// Refresh nodes for the selected pool.
+		if len(m.k8sBrowserNodePools) > 0 && m.k8sBrowserPoolCursor < len(m.k8sBrowserNodePools) {
+			poolID := m.k8sBrowserNodePools[m.k8sBrowserPoolCursor].id
+			m.k8sNodesLoading = true
+			return m, m.fetchNodes(m.k8sBrowserCluster, poolID)
+		}
+		return m, nil
+
+	case k8sNodeReplacedMsg:
+		m.loading = false
+		// Refresh nodes — the replaced node will transition through deleting → new node appears.
 		if len(m.k8sBrowserNodePools) > 0 && m.k8sBrowserPoolCursor < len(m.k8sBrowserNodePools) {
 			poolID := m.k8sBrowserNodePools[m.k8sBrowserPoolCursor].id
 			m.k8sNodesLoading = true

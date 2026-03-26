@@ -206,6 +206,7 @@ type k8sNodesMsg struct {
 }
 
 type k8sNodeRebootedMsg struct{}
+type k8sNodeReplacedMsg struct{}
 type k8sNodePollTickMsg struct{}
 
 type errMsg struct{ err error }

@@ -650,6 +650,11 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.loading = true
 			return m, tea.Batch(m.spin.Tick, m.rebootNode(m.k8sRebootNodeID, m.k8sBrowserCluster.region))
 		}
+		if m.state == stateK8sBrowser && m.k8sConfirmReplace {
+			m.k8sConfirmReplace = false
+			m.loading = true
+			return m, tea.Batch(m.spin.Tick, m.replaceNode(m.k8sReplaceNodeID, m.k8sBrowserCluster.region))
+		}
 	case "n", "N":
 		if m.showConfirm {
 			m.showConfirm = false
@@ -744,12 +749,21 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Image-level deletion removed — only tag deletion is supported.
 		}
 	case "r", "R":
-		if m.state == stateK8sBrowser && m.k8sBrowserFocus == 1 && !m.loading && !m.k8sConfirmReboot {
+		if m.state == stateK8sBrowser && m.k8sBrowserFocus == 1 && !m.loading && !m.k8sConfirmReboot && !m.k8sConfirmReplace {
 			if len(m.k8sBrowserNodes) > 0 && m.k8sBrowserNodeCursor < len(m.k8sBrowserNodes) {
 				n := m.k8sBrowserNodes[m.k8sBrowserNodeCursor]
 				m.k8sRebootNodeID = n.id
 				m.k8sRebootNodeName = n.name
 				m.k8sConfirmReboot = true
+			}
+		}
+	case "x", "X":
+		if m.state == stateK8sBrowser && m.k8sBrowserFocus == 1 && !m.loading && !m.k8sConfirmReboot && !m.k8sConfirmReplace {
+			if len(m.k8sBrowserNodes) > 0 && m.k8sBrowserNodeCursor < len(m.k8sBrowserNodes) {
+				n := m.k8sBrowserNodes[m.k8sBrowserNodeCursor]
+				m.k8sReplaceNodeID = n.id
+				m.k8sReplaceNodeName = n.name
+				m.k8sConfirmReplace = true
 			}
 		}
 	case "tab":
@@ -892,6 +906,10 @@ func (m rootModel) handleEsc() (rootModel, tea.Cmd) {
 			m.k8sConfirmReboot = false
 			return m, nil
 		}
+		if m.k8sConfirmReplace {
+			m.k8sConfirmReplace = false
+			return m, nil
+		}
 		if m.k8sBrowserFocus == 1 {
 			m.k8sBrowserFocus = 0
 			return m, nil
@@ -901,6 +919,7 @@ func (m rootModel) handleEsc() (rootModel, tea.Cmd) {
 		m.k8sBrowserNodes = nil
 		m.k8sBrowserNodePools = nil
 		m.k8sConfirmReboot = false
+		m.k8sConfirmReplace = false
 	case stateSecretsBrowser:
 		m.state = stateDashboard
 		m.activeService = serviceSecrets

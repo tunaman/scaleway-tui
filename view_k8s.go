@@ -48,6 +48,7 @@ func (m rootModel) drawK8sBrowser() string {
 		hotkey("↑↓", "Navigate"),
 		hotkey("Tab", "Switch pane"),
 		hotkey("R", "Reboot node"),
+		hotkey("X", "Replace node"),
 		hotkey("F5", "Refresh"),
 		hotkey("Esc", "Back"),
 		hotkey("Q", "Quit"),
@@ -97,6 +98,9 @@ func (m rootModel) drawK8sBrowser() string {
 
 	if m.k8sConfirmReboot {
 		return m.renderK8sRebootConfirm(base)
+	}
+	if m.k8sConfirmReplace {
+		return m.renderK8sReplaceConfirm(base)
 	}
 	return base
 }
@@ -340,6 +344,47 @@ func (m rootModel) renderK8sNodePane(paneW, paneH int, borderColor lipgloss.Colo
 		lipgloss.JoinVertical(lipgloss.Left, rows...),
 	)
 	return panelBox(poolTitle, paneW, paneH, borderColor, listContent)
+}
+
+// renderK8sReplaceConfirm shows a centered confirmation dialog for node replacement.
+func (m rootModel) renderK8sReplaceConfirm(_ string) string {
+	dialogW := min(m.width-8, 60)
+	innerW := dialogW - 6
+	bg := lipgloss.NewStyle().Background(colBg2)
+
+	heading := bg.Foreground(colPurple).Bold(true).Width(innerW).Render("Replace Node?")
+	empty := bg.Width(innerW).Render("")
+	nodeLine := bg.Width(innerW).Render(
+		bg.Foreground(colComment).Render("Node:  ") +
+			bg.Foreground(colFg).Render(m.k8sReplaceNodeName),
+	)
+	warn := bg.Foreground(colYellow).Width(innerW).Render("The node will be drained and replaced with a new one.")
+
+	divider := bg.Foreground(colBg3).Width(innerW).Render(strings.Repeat("─", innerW))
+	actions := bg.Width(innerW).Render(
+		lipgloss.JoinHorizontal(lipgloss.Top,
+			lipgloss.NewStyle().Background(colPurple).Foreground(colBg).Bold(true).Padding(0, 2).Render("Y  Confirm"),
+			lipgloss.NewStyle().Background(colBg3).Foreground(colFg).Padding(0, 2).Render("Esc  Cancel"),
+		),
+	)
+
+	body := bg.Width(innerW).Render(
+		lipgloss.JoinVertical(lipgloss.Left,
+			heading, empty, nodeLine, empty, warn, empty, divider, empty, actions,
+		),
+	)
+	dialog := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(colPurple).
+		Background(colBg2).
+		Padding(1, 2).
+		Width(dialogW).
+		Render(body)
+
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, dialog,
+		lipgloss.WithWhitespaceChars(" "),
+		lipgloss.WithWhitespaceForeground(colBg),
+	)
 }
 
 // renderK8sRebootConfirm shows a centered confirmation dialog over the K8s browser.
