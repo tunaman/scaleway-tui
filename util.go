@@ -164,6 +164,16 @@ func min(a, b int) int {
 	return b
 }
 
+// hasRebootingNode returns true if any node in the slice has status "rebooting".
+func hasRebootingNode(nodes []k8sNode) bool {
+	for _, n := range nodes {
+		if strings.ToLower(n.status) == "rebooting" {
+			return true
+		}
+	}
+	return false
+}
+
 // ─────────────────────────────────────────────
 // Billing helpers
 // ─────────────────────────────────────────────

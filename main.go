@@ -418,6 +418,18 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.k8sBrowserNodes = msg.nodes
 		m.k8sBrowserNodeCursor = 0
 		m.k8sBrowserNodeScrollY = 0
+		// Keep polling while any node is still rebooting.
+		if m.state == stateK8sBrowser && hasRebootingNode(msg.nodes) {
+			return m, pollNodesAfterDelay()
+		}
+		return m, nil
+
+	case k8sNodePollTickMsg:
+		// Only poll if still in the K8s browser and the pool is available.
+		if m.state == stateK8sBrowser && len(m.k8sBrowserNodePools) > 0 && m.k8sBrowserPoolCursor < len(m.k8sBrowserNodePools) {
+			poolID := m.k8sBrowserNodePools[m.k8sBrowserPoolCursor].id
+			return m, m.fetchNodes(m.k8sBrowserCluster, poolID)
+		}
 		return m, nil
 
 	case k8sNodeRebootedMsg:
