@@ -16,23 +16,7 @@ func (m rootModel) drawRegistryBrowser() string {
 	visible := m.filteredRegistryImages()
 
 	// ── Top bar ──
-	crumb := lipgloss.NewStyle().Foreground(colComment).Render("REGISTRY ")
-	nsPart := lipgloss.NewStyle().
-		Foreground(colGreen).
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(colGreen).
-		Padding(0, 1).
-		Render(ns.name)
-	leftPart := lipgloss.JoinHorizontal(lipgloss.Center, crumb, nsPart)
-	countStr := lipgloss.NewStyle().Foreground(colComment).Render(
-		fmt.Sprintf("%d images", len(m.regBrowserImages)),
-	)
-	spacer := strings.Repeat(" ", max(0, m.width-lipgloss.Width(leftPart)-lipgloss.Width(countStr)-8))
-	topBar := lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder(), false, false, true, false).
-		BorderForeground(colBorder).
-		Width(m.width-4).Padding(0, 1).
-		Render(leftPart + spacer + countStr)
+	topBar := m.renderTopBar()
 
 	// ── Status bar ──
 	hotkey := func(key, desc string) string {

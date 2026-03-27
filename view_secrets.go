@@ -16,23 +16,7 @@ func (m rootModel) drawSecretsBrowser() string {
 	visible := m.filteredSecretVersions()
 
 	// ── Top bar ──
-	crumb := lipgloss.NewStyle().Foreground(colComment).Render("SECRETS ")
-	sPart := lipgloss.NewStyle().
-		Foreground(colPurple).
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(colPurple).
-		Padding(0, 1).
-		Render(s.name)
-	leftPart := lipgloss.JoinHorizontal(lipgloss.Center, crumb, sPart)
-	countStr := lipgloss.NewStyle().Foreground(colComment).Render(
-		fmt.Sprintf("%d versions", len(m.secBrowserVersions)),
-	)
-	spacer := strings.Repeat(" ", max(0, m.width-lipgloss.Width(leftPart)-lipgloss.Width(countStr)-8))
-	topBar := lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder(), false, false, true, false).
-		BorderForeground(colBorder).
-		Width(m.width-4).Padding(0, 1).
-		Render(leftPart + spacer + countStr)
+	topBar := m.renderTopBar()
 
 	// ── Status bar ──
 	hotkey := func(key, desc string) string {
