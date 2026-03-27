@@ -422,7 +422,7 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.k8sBrowserNodeCursor = 0
 		m.k8sBrowserNodeScrollY = 0
 		// Keep polling while any node is still rebooting.
-		if m.state == stateK8sBrowser && hasRebootingNode(msg.nodes) {
+		if m.state == stateK8sBrowser && hasTransientNode(msg.nodes) {
 			return m, pollNodesAfterDelay()
 		}
 		return m, nil

@@ -164,10 +164,12 @@ func min(a, b int) int {
 	return b
 }
 
-// hasRebootingNode returns true if any node in the slice has status "rebooting".
-func hasRebootingNode(nodes []k8sNode) bool {
+// hasTransientNode returns true if any node is in a transient state that
+// warrants continued polling (creating, deleting, rebooting, etc.).
+func hasTransientNode(nodes []k8sNode) bool {
 	for _, n := range nodes {
-		if strings.ToLower(n.status) == "rebooting" {
+		switch strings.ToLower(n.status) {
+		case "creating", "not_ready", "deleting", "rebooting", "upgrading", "starting", "registering":
 			return true
 		}
 	}
