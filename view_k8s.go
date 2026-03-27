@@ -314,9 +314,9 @@ func (m rootModel) renderK8sNodePane(paneW, paneH int, borderColor lipgloss.Colo
 
 			statusColor := colGreen
 			switch strings.ToLower(n.status) {
-			case "not_ready", "rebooting":
+			case "not_ready", "rebooting", "deleting", "creating", "starting", "registering", "upgrading":
 				statusColor = colYellow
-			case "error", "unknown", "locked", "deleting":
+			case "error", "unknown", "locked", "creation_error":
 				statusColor = colRed
 			}
 			statusStr := lipgloss.NewStyle().Foreground(statusColor).Render(padRight(n.status, statusW))
