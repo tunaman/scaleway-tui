@@ -67,46 +67,88 @@ func (m rootModel) drawDashboard() string {
 // ─────────────────────────────────────────────
 
 func (m rootModel) renderTopBar() string {
-	projectLabel := lipgloss.NewStyle().Foreground(colComment).Render("PROJECT ")
-	projectVal := lipgloss.NewStyle().
-		Foreground(colGreen).
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(colGreen).
-		Padding(0, 1).
-		Render(" " + m.project + " ")
+	pill := func(text string, color lipgloss.Color) string {
+		return lipgloss.NewStyle().
+			Foreground(color).
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(color).
+			Padding(0, 1).
+			Render(" " + text + " ")
+	}
+	sep := lipgloss.NewStyle().Foreground(colComment).Render(" › ")
+	comment := func(s string) string { return lipgloss.NewStyle().Foreground(colComment).Render(s) }
 
-	region := lipgloss.NewStyle().Foreground(colComment).Render("  Region: ") +
-		lipgloss.NewStyle().Foreground(colBlue).Render(" "+m.activeRegion+" ")
-	clock := lipgloss.NewStyle().Foreground(colComment).Render(" " + time.Now().Format("15:04") + " ")
+	// ── Left: breadcrumb ──
+	crumbs := []string{pill(m.project, colGreen)}
 
-	billingProject := ""
-	if m.activeService == serviceBilling {
-		label := lipgloss.NewStyle().Foreground(colComment).Render("  Billing ")
-		var pill string
-		if m.billingProjectIdx > 0 && m.billingProjectIdx <= len(m.projects) {
-			pill = lipgloss.NewStyle().Foreground(colPurple).Border(lipgloss.RoundedBorder()).
-				BorderForeground(colPurple).Padding(0, 1).Render(" " + m.projects[m.billingProjectIdx-1].name + " ")
-		} else {
-			pill = lipgloss.NewStyle().Foreground(colPurple).Border(lipgloss.RoundedBorder()).
-				BorderForeground(colPurple).Padding(0, 1).Render(" all ")
+	serviceNames := []string{"Object Storage", "K8s Clusters", "Billing", "Container Registry", "Secrets Manager"}
+	switch m.state {
+	case stateObjectBrowser:
+		crumbs = append(crumbs, sep, pill("Object Storage", colBlue))
+		crumbs = append(crumbs, sep, pill(m.browserBucket, colPurple))
+		if m.browserPrefix != "" {
+			for _, part := range strings.Split(strings.TrimSuffix(m.browserPrefix, "/"), "/") {
+				crumbs = append(crumbs, sep, pill(part, colPurple))
+			}
 		}
-		billingProject = lipgloss.JoinHorizontal(lipgloss.Center, label, pill)
+	case stateK8sBrowser:
+		crumbs = append(crumbs, sep, pill("K8s Clusters", colBlue))
+		crumbs = append(crumbs, sep, pill(m.k8sBrowserCluster.name, colPurple))
+	case stateRegistryBrowser:
+		crumbs = append(crumbs, sep, pill("Container Registry", colBlue))
+		crumbs = append(crumbs, sep, pill(m.regBrowserNamespace.name, colPurple))
+	case stateSecretsBrowser:
+		crumbs = append(crumbs, sep, pill("Secrets Manager", colBlue))
+		crumbs = append(crumbs, sep, pill(m.secBrowserSecret.name, colPurple))
+	default:
+		if m.activeService < len(serviceNames) {
+			crumbs = append(crumbs, sep, pill(serviceNames[m.activeService], colBlue))
+		}
+		if m.activeService == serviceBilling && m.billingPeriod != "" {
+			crumbs = append(crumbs, sep, pill(m.billingPeriod, colPurple))
+			billingProjectName := "all"
+			if m.billingProjectIdx > 0 && m.billingProjectIdx <= len(m.projects) {
+				billingProjectName = m.projects[m.billingProjectIdx-1].name
+			}
+			crumbs = append(crumbs, sep, pill(billingProjectName, colPurple))
+		}
+	}
+	crumbs = append(crumbs, sep, pill(m.activeRegion, colComment))
+
+	if m.activeService == serviceBilling && m.billingExportMsg != "" {
+		crumbs = append(crumbs, "  "+lipgloss.NewStyle().Foreground(colGreen).Render("✓ "+m.billingExportMsg))
 	}
 
-	exportMsg := ""
-	if m.activeService == serviceBilling && m.billingExportMsg != "" {
-		exportMsg = "  " + lipgloss.NewStyle().Foreground(colGreen).Render("✓ "+m.billingExportMsg)
+	leftPart := lipgloss.JoinHorizontal(lipgloss.Center, crumbs...)
+
+	// ── Right: context info + clock ──
+	var rightInfo string
+	switch m.state {
+	case stateObjectBrowser:
+		if len(m.browserSelected) > 0 {
+			rightInfo = lipgloss.NewStyle().Foreground(colGreen).Render(fmt.Sprintf("%d selected", len(m.browserSelected))) +
+				comment(fmt.Sprintf(" / %d items  ", len(m.browserEntries)))
+		} else {
+			rightInfo = comment(fmt.Sprintf("%d items  ", len(m.browserEntries)))
+		}
+	case stateK8sBrowser:
+		rightInfo = comment("v" + m.k8sBrowserCluster.version + "  ")
+	case stateRegistryBrowser:
+		rightInfo = comment(fmt.Sprintf("%d images  ", len(m.regBrowserImages)))
+	case stateSecretsBrowser:
+		rightInfo = comment(fmt.Sprintf("%d versions  ", len(m.secBrowserVersions)))
 	}
-	leftPart := lipgloss.JoinHorizontal(lipgloss.Center, projectLabel, projectVal, region, billingProject, exportMsg)
-	spacer := strings.Repeat(" ", max(0, m.width-lipgloss.Width(leftPart)-lipgloss.Width(clock)-8))
-	row := leftPart + spacer + clock
+	clock := lipgloss.NewStyle().Foreground(colComment).Render(" " + time.Now().Format("15:04") + " ")
+	rightPart := rightInfo + clock
+
+	spacer := strings.Repeat(" ", max(0, m.width-lipgloss.Width(leftPart)-lipgloss.Width(rightPart)-8))
 
 	return lipgloss.NewStyle().
 		Border(lipgloss.NormalBorder(), false, false, true, false).
 		BorderForeground(colBorder).
 		Width(m.width-4).
 		Padding(0, 1).
-		Render(row)
+		Render(leftPart + spacer + rightPart)
 }
 
 // ─────────────────────────────────────────────

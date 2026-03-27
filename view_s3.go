@@ -13,7 +13,7 @@ import (
 
 // drawObjectBrowser renders the full-screen object browser.
 func (m rootModel) drawObjectBrowser() string {
-	topBar := m.renderBrowserTopBar()
+	topBar := m.renderTopBar()
 	statusBar := m.renderBrowserStatusBar()
 
 	if m.upload.active {
@@ -53,46 +53,6 @@ func (m rootModel) drawObjectBrowser() string {
 	return base
 }
 
-func (m rootModel) renderBrowserTopBar() string {
-	crumb := lipgloss.NewStyle().Foreground(colComment).Render("BUCKET ")
-	bucketPart := lipgloss.NewStyle().
-		Foreground(colGreen).
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(colGreen).
-		Padding(0, 1).
-		Render(m.browserBucket)
-
-	path := ""
-	if m.browserPrefix != "" {
-		parts := strings.Split(strings.TrimSuffix(m.browserPrefix, "/"), "/")
-		for _, p := range parts {
-			path += lipgloss.NewStyle().Foreground(colComment).Render(" › ") +
-				lipgloss.NewStyle().Foreground(colBlue).Render(p)
-		}
-	}
-
-	// Right side: selected count (if any) + total items
-	countStr := fmt.Sprintf("%d items", len(m.browserEntries))
-	if len(m.browserSelected) > 0 {
-		countStr = lipgloss.NewStyle().Foreground(colGreen).Render(
-			fmt.Sprintf("%d selected", len(m.browserSelected)),
-		) + lipgloss.NewStyle().Foreground(colComment).Render(
-			fmt.Sprintf(" / %d items", len(m.browserEntries)),
-		)
-	} else {
-		countStr = lipgloss.NewStyle().Foreground(colComment).Render(countStr)
-	}
-
-	leftPart := lipgloss.JoinHorizontal(lipgloss.Center, crumb, bucketPart, path)
-	spacer := strings.Repeat(" ", max(0, m.width-lipgloss.Width(leftPart)-lipgloss.Width(countStr)-8))
-
-	return lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder(), false, false, true, false).
-		BorderForeground(colBorder).
-		Width(m.width-4).
-		Padding(0, 1).
-		Render(leftPart + spacer + countStr)
-}
 
 func (m rootModel) renderBrowserStatusBar() string {
 	hotkey := func(key, desc string) string {

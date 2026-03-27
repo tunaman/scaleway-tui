@@ -12,31 +12,8 @@ import (
 // ─────────────────────────────────────────────
 
 func (m rootModel) drawK8sBrowser() string {
-	cl := m.k8sBrowserCluster
-
 	// ── Top bar ──
-	pill := func(text string) string {
-		return lipgloss.NewStyle().
-			Foreground(colBlue).
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(colBlue).
-			Padding(0, 1).
-			Render(text)
-	}
-	crumb := lipgloss.NewStyle().Foreground(colComment).Render("K8S ")
-	leftPart := lipgloss.JoinHorizontal(lipgloss.Center,
-		crumb,
-		pill(cl.name),
-		lipgloss.NewStyle().Foreground(colComment).Render(" "),
-		pill("v"+cl.version),
-		lipgloss.NewStyle().Foreground(colComment).Render(" "),
-		pill(cl.region),
-	)
-	topBar := lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder(), false, false, true, false).
-		BorderForeground(colBorder).
-		Width(m.width-4).Padding(0, 1).
-		Render(leftPart)
+	topBar := m.renderTopBar()
 
 	// ── Status bar ──
 	hotkey := func(key, desc string) string {
