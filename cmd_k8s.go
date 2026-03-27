@@ -100,6 +100,22 @@ func pollNodesAfterDelay() tea.Cmd {
 	}
 }
 
+// replaceNode drains a node and provisions a fresh replacement.
+func (m rootModel) replaceNode(nodeID, region string) tea.Cmd {
+	return func() tea.Msg {
+		k8sAPI := k8s.NewAPI(m.scwClient)
+		_, err := k8sAPI.DeleteNode(&k8s.DeleteNodeRequest{
+			Region:  scw.Region(region),
+			NodeID:  nodeID,
+			Replace: true,
+		})
+		if err != nil {
+			return errMsg{fmt.Errorf("replace node: %w", err)}
+		}
+		return k8sNodeReplacedMsg{}
+	}
+}
+
 // rebootNode sends a reboot request for a single node.
 func (m rootModel) rebootNode(nodeID, region string) tea.Cmd {
 	return func() tea.Msg {
