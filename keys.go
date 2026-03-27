@@ -558,7 +558,7 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.state == stateObjectBrowser {
 				return m, tea.Batch(m.spin.Tick, m.fetchBucketContents(m.browserBucket, m.browserPrefix))
 			}
-			if m.state == stateBilling {
+			if m.state == stateDashboard && m.activeService == serviceBilling {
 				return m, tea.Batch(m.spin.Tick, m.fetchBillingOverview(m.billingPeriod))
 			}
 			if m.state == stateK8sBrowser {
@@ -578,14 +578,14 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(m.spin.Tick, m.fetchData())
 		}
 	case "e", "E":
-		if m.state == stateBilling && !m.loading && !m.billingExportOverlay {
+		if m.state == stateDashboard && m.activeService == serviceBilling && !m.loading && !m.billingExportOverlay {
 			m.billingExportFrom = time.Now().AddDate(0, -11, 0).Format("2006-01")
 			m.billingExportTo = time.Now().Format("2006-01")
 			m.billingExportField = 0
 			m.billingExportOverlay = true
 		}
 	case "p", "P":
-		if m.state == stateBilling && !m.loading {
+		if m.state == stateDashboard && m.activeService == serviceBilling && !m.loading {
 			m.billingProjectOverlay = true
 			m.billingProjectCursor = m.billingProjectIdx
 		}
@@ -802,7 +802,7 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.bucketScrollX = max(0, m.bucketScrollX-4)
 		} else if m.state == stateObjectBrowser {
 			m.browserScrollX = max(0, m.browserScrollX-4)
-		} else if m.state == stateBilling && !m.loading {
+		} else if m.state == stateDashboard && m.activeService == serviceBilling && !m.loading {
 			m.billingPeriod = prevMonth(m.billingPeriod)
 			m.loading = true
 			m.billingExportMsg = ""
@@ -815,7 +815,7 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.bucketScrollX += 4
 		} else if m.state == stateObjectBrowser {
 			m.browserScrollX += 4
-		} else if m.state == stateBilling && !m.loading {
+		} else if m.state == stateDashboard && m.activeService == serviceBilling && !m.loading {
 			next := nextMonth(m.billingPeriod)
 			// Don't navigate into the future beyond current month
 			now := time.Now().Format("2006-01")
@@ -950,9 +950,6 @@ func (m rootModel) handleEsc() (rootModel, tea.Cmd) {
 			m.loading = true
 			return m, tea.Batch(m.spin.Tick, m.fetchBucketContents(m.browserBucket, parent))
 		}
-	case stateBilling:
-		m.state = stateDashboard
-		m.billingExportMsg = ""
 	case stateDashboard:
 		m.showDropdown = false
 		m.state = stateProfilePicker
@@ -978,7 +975,7 @@ func (m rootModel) handleUp() (rootModel, tea.Cmd) {
 			}
 		}
 
-	case m.state == stateBilling && len(m.billingDetail) > 0:
+	case m.state == stateDashboard && m.focus == focusContent && m.activeService == serviceBilling && len(m.billingDetail) > 0:
 		if m.billingCursor > 0 {
 			m.billingCursor--
 			if m.billingCursor < m.billingScrollY {
@@ -1095,7 +1092,7 @@ func (m rootModel) handleDown() (rootModel, tea.Cmd) {
 			m.browserScrollX = 0
 		}
 
-	case m.state == stateBilling && len(m.billingDetail) > 0:
+	case m.state == stateDashboard && m.focus == focusContent && m.activeService == serviceBilling && len(m.billingDetail) > 0:
 		if m.billingCursor < len(m.billingDetail)-1 {
 			m.billingCursor++
 		}
