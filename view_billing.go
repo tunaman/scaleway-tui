@@ -12,46 +12,26 @@ import (
 // Billing — views
 // ─────────────────────────────────────────────
 
-// drawBilling renders the full-screen billing view.
-func (m rootModel) drawBilling() string {
-	topBar := m.renderBillingTopBar()
-	statusBar := m.renderBillingStatusBar()
-
+// renderBillingContent renders the billing chart and detail table inside the
+// dashboard content panel (nav remains visible).
+func (m rootModel) renderBillingContent(totalW, height int, borderColor lipgloss.Color) string {
 	if m.loading {
 		inner := lipgloss.Place(
-			m.width-4, m.height-topBarHeight-statusBarHeight-4,
+			totalW-4, height-listRowOverhead,
 			lipgloss.Center, lipgloss.Center,
 			m.spin.View()+" Loading billing data…",
 		)
-		return lipgloss.NewStyle().Margin(1, 2).Render(
-			lipgloss.JoinVertical(lipgloss.Left, topBar, inner, statusBar),
-		)
+		return panelBox("BILLING", totalW, height, borderColor, inner)
 	}
 
-	contentH := m.height - topBarHeight - statusBarHeight - 6
-	contentW := m.width - 4
+	// Split: chart on left (60%), detail table on right (40%).
+	chartW := (totalW * 6) / 10
+	tableW := totalW - chartW
 
-	// Split: chart on left (60%), detail table on right (40%)
-	chartW := (contentW * 6) / 10
-	tableW := contentW - chartW
-
-	chart := m.renderBillingChart(chartW, contentH)
-	table := m.renderBillingDetail(tableW, contentH)
-
-	base := lipgloss.NewStyle().Margin(1, 2).Render(
-		lipgloss.JoinVertical(lipgloss.Left,
-			topBar,
-			lipgloss.JoinHorizontal(lipgloss.Top, chart, table),
-			statusBar,
-		),
+	return lipgloss.JoinHorizontal(lipgloss.Top,
+		m.renderBillingChart(chartW, height),
+		m.renderBillingDetail(tableW, height),
 	)
-	if m.billingProjectOverlay {
-		return m.renderBillingProjectOverlay()
-	}
-	if m.billingExportOverlay {
-		return m.renderBillingExportOverlay()
-	}
-	return base
 }
 
 // renderBillingProjectOverlay shows a centered project picker.
@@ -176,72 +156,6 @@ func (m rootModel) renderBillingExportOverlay() string {
 		lipgloss.WithWhitespaceChars(" "),
 		lipgloss.WithWhitespaceForeground(colBg),
 	)
-}
-
-// renderBillingTopBar shows the current period and total.
-func (m rootModel) renderBillingTopBar() string {
-	billingLabel := lipgloss.NewStyle().Foreground(colComment).Render("BILLING ")
-	periodBox := lipgloss.NewStyle().Foreground(colPurple).Border(lipgloss.RoundedBorder()).
-		BorderForeground(colPurple).Padding(0, 1).Render(" " + m.billingPeriod + " ")
-	left := lipgloss.JoinHorizontal(lipgloss.Center, billingLabel, periodBox)
-
-	// Project filter indicator
-	projectStr := ""
-	if m.billingProjectIdx > 0 && m.billingProjectIdx <= len(m.projects) {
-		proj := m.projects[m.billingProjectIdx-1]
-		projectBox := lipgloss.NewStyle().Foreground(colBlue).Border(lipgloss.RoundedBorder()).
-			BorderForeground(colBlue).Padding(0, 1).Render(" " + proj.name + " ")
-		projectStr = lipgloss.JoinHorizontal(lipgloss.Center,
-			lipgloss.NewStyle().Foreground(colComment).Render("  Project "),
-			projectBox,
-		)
-	} else if len(m.projects) > 0 {
-		allBox := lipgloss.NewStyle().Foreground(colBlue).Border(lipgloss.RoundedBorder()).
-			BorderForeground(colBlue).Padding(0, 1).Render(" all ")
-		projectStr = lipgloss.JoinHorizontal(lipgloss.Center,
-			lipgloss.NewStyle().Foreground(colComment).Render("  Project "),
-			allBox,
-		)
-	}
-
-	exportMsg := ""
-	if m.billingExportMsg != "" {
-		exportMsg = "  " + lipgloss.NewStyle().Foreground(colGreen).Render(" ✓ "+m.billingExportMsg+" ")
-	}
-
-	clock := lipgloss.NewStyle().Foreground(colComment).Render(" " + time.Now().Format("15:04") + " ")
-	leftPart := lipgloss.JoinHorizontal(lipgloss.Center, left, projectStr, exportMsg)
-	spacer := strings.Repeat(" ", max(0, m.width-lipgloss.Width(leftPart)-lipgloss.Width(clock)-8))
-
-	return lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder(), false, false, true, false).
-		BorderForeground(colBorder).
-		Width(m.width-4).
-		Padding(0, 1).
-		Render(leftPart + spacer + clock)
-}
-
-func (m rootModel) renderBillingStatusBar() string {
-	hotkey := func(key, desc string) string {
-		k := lipgloss.NewStyle().Background(colBg3).Foreground(colYellow).Bold(true).Render(" " + key + " ")
-		d := lipgloss.NewStyle().Foreground(colComment).Background(colBg2).Render(" " + desc + " ")
-		return k + d
-	}
-	keys := lipgloss.JoinHorizontal(lipgloss.Top,
-		hotkey("←→", "Month"),
-		hotkey("↑↓", "Navigate"),
-		hotkey("P", "Project"),
-		hotkey("E", "Export CSV"),
-		hotkey("F5", "Refresh"),
-		hotkey("Esc", "Back"),
-		hotkey("Q", "Quit"),
-	)
-	barW := m.width - 4
-	spacer := lipgloss.NewStyle().Background(colBg2).Width(max(0, barW-lipgloss.Width(keys))).Render("")
-	return lipgloss.NewStyle().
-		Background(colBg2).
-		Width(barW).
-		Render(lipgloss.JoinHorizontal(lipgloss.Top, keys, spacer))
 }
 
 // renderBillingChart draws an ASCII bar chart of the last N months.

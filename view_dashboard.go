@@ -25,7 +25,9 @@ func (m rootModel) drawDashboard() string {
 		)
 	}
 
-	if m.loading {
+	// Only show full-screen loading for non-billing services; billing shows
+	// its own spinner inside the content panel so the nav stays visible.
+	if m.loading && m.activeService != serviceBilling {
 		inner := lipgloss.Place(
 			m.width-4, m.height-topBarHeight-statusBarHeight-4,
 			lipgloss.Center, lipgloss.Center,
@@ -51,6 +53,12 @@ func (m rootModel) drawDashboard() string {
 	if m.input.active {
 		return m.renderInputOverlay(base)
 	}
+	if m.billingProjectOverlay {
+		return m.renderBillingProjectOverlay()
+	}
+	if m.billingExportOverlay {
+		return m.renderBillingExportOverlay()
+	}
 	return base
 }
 
@@ -71,7 +79,25 @@ func (m rootModel) renderTopBar() string {
 		lipgloss.NewStyle().Foreground(colBlue).Render(" "+m.activeRegion+" ")
 	clock := lipgloss.NewStyle().Foreground(colComment).Render(" " + time.Now().Format("15:04") + " ")
 
-	leftPart := lipgloss.JoinHorizontal(lipgloss.Center, projectLabel, projectVal, region)
+	billingProject := ""
+	if m.activeService == serviceBilling {
+		label := lipgloss.NewStyle().Foreground(colComment).Render("  Billing ")
+		var pill string
+		if m.billingProjectIdx > 0 && m.billingProjectIdx <= len(m.projects) {
+			pill = lipgloss.NewStyle().Foreground(colPurple).Border(lipgloss.RoundedBorder()).
+				BorderForeground(colPurple).Padding(0, 1).Render(" " + m.projects[m.billingProjectIdx-1].name + " ")
+		} else {
+			pill = lipgloss.NewStyle().Foreground(colPurple).Border(lipgloss.RoundedBorder()).
+				BorderForeground(colPurple).Padding(0, 1).Render(" all ")
+		}
+		billingProject = lipgloss.JoinHorizontal(lipgloss.Center, label, pill)
+	}
+
+	exportMsg := ""
+	if m.activeService == serviceBilling && m.billingExportMsg != "" {
+		exportMsg = "  " + lipgloss.NewStyle().Foreground(colGreen).Render("✓ "+m.billingExportMsg)
+	}
+	leftPart := lipgloss.JoinHorizontal(lipgloss.Center, projectLabel, projectVal, region, billingProject, exportMsg)
 	spacer := strings.Repeat(" ", max(0, m.width-lipgloss.Width(leftPart)-lipgloss.Width(clock)-8))
 	row := leftPart + spacer + clock
 
@@ -93,16 +119,29 @@ func (m rootModel) renderStatusBar() string {
 		d := lipgloss.NewStyle().Foreground(colComment).Background(colBg2).Render(" " + desc + " ")
 		return k + d
 	}
-	keys := lipgloss.JoinHorizontal(lipgloss.Top,
-		hotkey("F5", "Refresh"),
-		hotkey("Tab", "Focus"),
-		hotkey("↑↓", "Navigate"),
-		hotkey("Enter", "Open"),
-		hotkey("/", "Filter"),
-		hotkey("C", "New bucket"),
-		hotkey("Esc", "Back"),
-		hotkey("Q", "Quit"),
-	)
+	var keys string
+	if m.activeService == serviceBilling {
+		keys = lipgloss.JoinHorizontal(lipgloss.Top,
+			hotkey("←→", "Month"),
+			hotkey("↑↓", "Navigate"),
+			hotkey("Tab", "Focus"),
+			hotkey("P", "Project"),
+			hotkey("E", "Export CSV"),
+			hotkey("F5", "Refresh"),
+			hotkey("Q", "Quit"),
+		)
+	} else {
+		keys = lipgloss.JoinHorizontal(lipgloss.Top,
+			hotkey("F5", "Refresh"),
+			hotkey("Tab", "Focus"),
+			hotkey("↑↓", "Navigate"),
+			hotkey("Enter", "Open"),
+			hotkey("/", "Filter"),
+			hotkey("C", "New bucket"),
+			hotkey("Esc", "Back"),
+			hotkey("Q", "Quit"),
+		)
+	}
 	// barW matches the Width passed to the outer style — no extra Padding() so
 	// there is no off-by-two and no background-colour rectangle at the right edge.
 	barW := m.width - 4
@@ -166,7 +205,7 @@ func (m rootModel) renderContent(height int) string {
 	case serviceK8s:
 		return m.renderClusters(contentW, height, focusColor)
 	case serviceBilling:
-		return m.renderBillingPreview(contentW, height, focusColor)
+		return m.renderBillingContent(contentW, height, focusColor)
 	case serviceRegistry:
 		return m.renderRegistry(contentW, height, focusColor)
 	case serviceSecrets:
@@ -593,17 +632,3 @@ func (m rootModel) renderSecrets(totalW, height int, borderColor lipgloss.Color)
 	return panelBox(panelTitle, totalW, height, borderColor, content)
 }
 
-// ─────────────────────────────────────────────
-// Billing preview (dashboard content area)
-// ─────────────────────────────────────────────
-
-// renderBillingPreview is shown briefly in the dashboard content area while
-// billing data is loading (auto-triggered on nav selection).
-func (m rootModel) renderBillingPreview(totalW, height int, borderColor lipgloss.Color) string {
-	inner := lipgloss.Place(
-		totalW-4, height-listRowOverhead,
-		lipgloss.Center, lipgloss.Center,
-		m.spin.View()+" Loading billing data…",
-	)
-	return panelBox("BILLING", totalW, height, borderColor, inner)
-}

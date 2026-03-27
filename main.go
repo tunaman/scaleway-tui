@@ -512,7 +512,14 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.secretScrollY = 0
 		m.prevBucketSel = -1
 		// Update the display name now that we've resolved it.
-		if len(msg.projects) > 0 {
+		for _, p := range msg.projects {
+			if p.id == m.projectID {
+				m.project = p.name
+				break
+			}
+		}
+		if m.project == m.projectID && len(msg.projects) > 0 {
+			// projectID not found in list — fall back to first project name.
 			m.project = msg.projects[0].name
 		}
 		return m, m.maybeCalculateSize()
@@ -535,7 +542,6 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.billingPeriod = msg.period
 		m.billingCursor = 0
 		m.billingScrollY = 0
-		m.state = stateBilling
 		return m, nil
 
 	case billingExportDoneMsg:
@@ -566,8 +572,6 @@ func (m rootModel) View() string {
 		return m.drawK8sBrowser()
 	case stateSecretsBrowser:
 		return m.drawSecretsBrowser()
-	case stateBilling:
-		return m.drawBilling()
 	default:
 		return m.drawDashboard()
 	}
