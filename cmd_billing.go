@@ -183,6 +183,7 @@ func (m rootModel) exportBillingCSV(from, to string) tea.Cmd {
 		type key struct{ category, period string }
 		totals := make(map[key]float64)
 		categories := make(map[string]bool)
+		discounts := make(map[string]float64) // period → discount amount
 
 		for _, p := range periods {
 			var page int32 = 1
@@ -202,6 +203,9 @@ func (m rootModel) exportBillingCSV(from, to string) tea.Cmd {
 				resp, err := api.ListConsumptions(req)
 				if err != nil {
 					break
+				}
+				if page == 1 {
+					discounts[period] = resp.TotalDiscountUntaxedValue
 				}
 				for _, c := range resp.Consumptions {
 					k := key{c.CategoryName, period}
@@ -279,20 +283,47 @@ func (m rootModel) exportBillingCSV(from, to string) tea.Cmd {
 			}
 		}
 
-		// Grand total row
-		totRow := []string{"TOTAL"}
+		// Grand total (pre-discount) row
+		totRow := []string{"SUBTOTAL"}
 		var grandTotal float64
+		periodTotals := make(map[string]float64)
 		for _, p := range periods {
 			var sum float64
 			for _, cat := range cats {
 				sum += totals[key{cat, p}]
 			}
 			grandTotal += sum
+			periodTotals[p] = sum
 			totRow = append(totRow, fmt.Sprintf("%.2f", sum))
 		}
 		totRow = append(totRow, fmt.Sprintf("%.2f", grandTotal))
 		if err := w.Write(totRow); err != nil {
-			return errMsg{fmt.Errorf("write totals row: %w", err)}
+			return errMsg{fmt.Errorf("write subtotal row: %w", err)}
+		}
+
+		// Discount row (only written when at least one period has a discount)
+		var grandDiscount float64
+		for _, d := range discounts {
+			grandDiscount += d
+		}
+		if grandDiscount > 0 {
+			discRow := []string{"DISCOUNT"}
+			for _, p := range periods {
+				discRow = append(discRow, fmt.Sprintf("-%.2f", discounts[p]))
+			}
+			discRow = append(discRow, fmt.Sprintf("-%.2f", grandDiscount))
+			if err := w.Write(discRow); err != nil {
+				return errMsg{fmt.Errorf("write discount row: %w", err)}
+			}
+
+			invoicedRow := []string{"INVOICED TOTAL"}
+			for _, p := range periods {
+				invoicedRow = append(invoicedRow, fmt.Sprintf("%.2f", periodTotals[p]-discounts[p]))
+			}
+			invoicedRow = append(invoicedRow, fmt.Sprintf("%.2f", grandTotal-grandDiscount))
+			if err := w.Write(invoicedRow); err != nil {
+				return errMsg{fmt.Errorf("write invoiced total row: %w", err)}
+			}
 		}
 
 		w.Flush()
