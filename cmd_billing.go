@@ -60,6 +60,9 @@ func (m rootModel) fetchBillingOverview(period string) tea.Cmd {
 				if err != nil {
 					break // billing perms may be restricted — skip silently
 				}
+				if page == 1 {
+					bm.discount = resp.TotalDiscountUntaxedValue
+				}
 				for _, c := range resp.Consumptions {
 					v := moneyToFloat(c.Value)
 					bm.totalExTax += v
@@ -74,18 +77,20 @@ func (m rootModel) fetchBillingOverview(period string) tea.Cmd {
 		}
 
 		// ── Detail rows for the selected period ──
-		detail, err := fetchConsumptionDetail(api, period, orgID, defaultProjectID, filterProjectID)
+		detail, detailDiscount, err := fetchConsumptionDetail(api, period, orgID, defaultProjectID, filterProjectID)
 		if err != nil {
 			return errMsg{fmt.Errorf("billing detail: %w", err)}
 		}
 
-		return billingOverviewMsg{months: months, detail: detail, period: period}
+		return billingOverviewMsg{months: months, detail: detail, period: period, detailDiscount: detailDiscount}
 	}
 }
 
-// fetchConsumptionDetail returns sorted consumption rows for a given period.
-func fetchConsumptionDetail(api *billing.API, period, orgID, defaultProjectID, filterProjectID string) ([]billingConsumptionRow, error) {
+// fetchConsumptionDetail returns sorted consumption rows and the total discount for a given period.
+// The discount is only populated when no project filter is applied (org-level query).
+func fetchConsumptionDetail(api *billing.API, period, orgID, defaultProjectID, filterProjectID string) ([]billingConsumptionRow, float64, error) {
 	var rows []billingConsumptionRow
+	var discount float64
 	var page int32 = 1
 	for {
 		req := &billing.ListConsumptionsRequest{
@@ -101,7 +106,10 @@ func fetchConsumptionDetail(api *billing.API, period, orgID, defaultProjectID, f
 		}
 		resp, err := api.ListConsumptions(req)
 		if err != nil {
-			return nil, err
+			return nil, 0, err
+		}
+		if page == 1 {
+			discount = resp.TotalDiscountUntaxedValue
 		}
 		for _, c := range resp.Consumptions {
 			rows = append(rows, billingConsumptionRow{
@@ -145,7 +153,7 @@ func fetchConsumptionDetail(api *billing.API, period, orgID, defaultProjectID, f
 		}
 		return aggregated[i].valueEUR > aggregated[j].valueEUR
 	})
-	return aggregated, nil
+	return aggregated, discount, nil
 }
 
 // exportBillingCSV fetches billing data for [from..to] and writes a CSV to ~/

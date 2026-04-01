@@ -239,7 +239,8 @@ type rootModel struct {
 	billingExportFrom    string // "YYYY-MM"
 	billingExportTo      string // "YYYY-MM"
 	billingExportField   int    // 0 = from focused, 1 = to focused
-	billingProjectIdx     int  // 0 = all (org level), 1..n = m.projects[idx-1]
+	billingCurrentDiscount float64 // discount for the currently displayed detail period
+	billingProjectIdx      int     // 0 = all (org level), 1..n = m.projects[idx-1]
 	billingProjectOverlay bool // project picker overlay visible
 	billingProjectCursor  int  // cursor inside the overlay list
 
@@ -540,6 +541,7 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.billingMonths = msg.months
 		m.billingDetail = msg.detail
 		m.billingPeriod = msg.period
+		m.billingCurrentDiscount = msg.detailDiscount
 		m.billingCursor = 0
 		m.billingScrollY = 0
 		return m, nil

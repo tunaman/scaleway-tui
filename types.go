@@ -220,7 +220,8 @@ func (e errMsg) Error() string { return e.err.Error() }
 // billingMonth holds aggregated consumption for a single billing period.
 type billingMonth struct {
 	period     string             // "YYYY-MM"
-	totalExTax float64            // total excl. tax in EUR
+	totalExTax float64            // total excl. tax in EUR (pre-discount)
+	discount   float64            // discount applied in EUR (0 when project-filtered)
 	byCategory map[string]float64 // category → EUR
 }
 
@@ -233,9 +234,10 @@ type billingConsumptionRow struct {
 
 // billingOverviewMsg carries the data for the billing overview screen.
 type billingOverviewMsg struct {
-	months []billingMonth          // last N months, chronological
-	detail []billingConsumptionRow // current/selected month detail
-	period string                  // currently displayed period "YYYY-MM"
+	months         []billingMonth          // last N months, chronological
+	detail         []billingConsumptionRow // current/selected month detail
+	period         string                  // currently displayed period "YYYY-MM"
+	detailDiscount float64                 // discount for the detail period (0 when project-filtered)
 }
 
 // billingExportDoneMsg is sent when CSV export completes.
