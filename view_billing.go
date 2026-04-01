@@ -167,11 +167,12 @@ func (m rootModel) renderBillingChart(w, h int) string {
 			lipgloss.NewStyle().Faint(true).Render("No data"))
 	}
 
-	// Find max for scaling
+	// Find max for scaling — use post-discount net values
+	netVal := func(bm billingMonth) float64 { return bm.totalExTax - bm.discount }
 	maxVal := 0.0
 	for _, bm := range m.billingMonths {
-		if bm.totalExTax > maxVal {
-			maxVal = bm.totalExTax
+		if v := netVal(bm); v > maxVal {
+			maxVal = v
 		}
 	}
 	if maxVal == 0 {
@@ -193,7 +194,7 @@ func (m rootModel) renderBillingChart(w, h int) string {
 			fmt.Sprintf("%6s ", formatEuroShort(threshold)),
 		)
 		for bi, bm := range m.billingMonths {
-			filled := bm.totalExTax >= threshold
+			filled := netVal(bm) >= threshold
 			barColor := colPurple
 			if bm.period == m.billingPeriod {
 				barColor = colGreen
@@ -238,8 +239,12 @@ func (m rootModel) renderBillingDetail(w, h int) string {
 	valW := 10
 	prodW := max(1, innerW-2-catW-valW-scrollW) // prefix(2) + catW + prodW + valW + scrollW = innerW
 
-	// Reserve 2 rows below the scroll area for the divider + TOTAL row.
-	listH := max(1, h-listRowOverhead-2)
+	// Reserve rows below the scroll area: divider + TOTAL (2), or divider + SUBTOTAL + DISCOUNT + TOTAL (4).
+	footerRows := 2
+	if m.billingCurrentDiscount > 0 {
+		footerRows = 4
+	}
+	listH := max(1, h-listRowOverhead-footerRows)
 
 	// Scroll viewport
 	scrollY := m.billingScrollY
@@ -283,21 +288,45 @@ func (m rootModel) renderBillingDetail(w, h int) string {
 		rows = append(rows, rowStr)
 	}
 
-	// Pinned TOTAL row — sum all detail rows regardless of scroll position.
-	totalAmt := 0.0
+	// Pinned footer — sum all detail rows regardless of scroll position.
+	subtotalAmt := 0.0
 	for _, r := range m.billingDetail {
-		totalAmt += r.valueEUR
+		subtotalAmt += r.valueEUR
 	}
-	totalCostStr := fmt.Sprintf("€%.2f", totalAmt)
-	totalRowStr := padRight("TOTAL", catW+prodW) + padRight(totalCostStr, valW)
-	totalRow := lipgloss.NewStyle().Foreground(colGreen).Bold(true).Width(innerW).Render("  " + totalRowStr)
+
+	var footerLines []string
+	if m.billingCurrentDiscount > 0 {
+		subtotalStr := fmt.Sprintf("€%.2f", subtotalAmt)
+		subtotalRowStr := padRight("SUBTOTAL", catW+prodW) + padRight(subtotalStr, valW)
+		footerLines = append(footerLines,
+			lipgloss.NewStyle().Foreground(colComment).Width(innerW).Render("  "+subtotalRowStr),
+		)
+		discountStr := fmt.Sprintf("-€%.2f", m.billingCurrentDiscount)
+		discountRowStr := padRight("DISCOUNT", catW+prodW) + padRight(discountStr, valW)
+		footerLines = append(footerLines,
+			lipgloss.NewStyle().Foreground(colYellow).Width(innerW).Render("  "+discountRowStr),
+		)
+		totalAmt := subtotalAmt - m.billingCurrentDiscount
+		totalCostStr := fmt.Sprintf("€%.2f", totalAmt)
+		totalRowStr := padRight("TOTAL", catW+prodW) + padRight(totalCostStr, valW)
+		footerLines = append(footerLines,
+			lipgloss.NewStyle().Foreground(colGreen).Bold(true).Width(innerW).Render("  "+totalRowStr),
+		)
+	} else {
+		totalCostStr := fmt.Sprintf("€%.2f", subtotalAmt)
+		totalRowStr := padRight("TOTAL", catW+prodW) + padRight(totalCostStr, valW)
+		footerLines = append(footerLines,
+			lipgloss.NewStyle().Foreground(colGreen).Bold(true).Width(innerW).Render("  "+totalRowStr),
+		)
+	}
 
 	content := lipgloss.JoinVertical(lipgloss.Left,
-		header,
-		strings.Repeat("─", innerW),
-		lipgloss.JoinVertical(lipgloss.Left, rows...),
-		strings.Repeat("─", innerW),
-		totalRow,
+		append([]string{
+			header,
+			strings.Repeat("─", innerW),
+			lipgloss.JoinVertical(lipgloss.Left, rows...),
+			strings.Repeat("─", innerW),
+		}, footerLines...)...,
 	)
 	return panelBox(m.billingPeriod, w, h, colGreen, content)
 }
