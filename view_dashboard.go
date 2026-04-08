@@ -448,9 +448,10 @@ func (m rootModel) renderClusters(totalW, height int, borderColor lipgloss.Color
 		status := lipgloss.NewStyle().Foreground(statusColor).Render(cl.status)
 		rowStr := padRight(cl.name, nameW) + padRight(cl.version, versionW) + status
 		if i == m.clusterCursor {
+			plainRowStr := padRight(cl.name, nameW) + padRight(cl.version, versionW) + padRight(cl.status, statusW)
 			rowStr = lipgloss.NewStyle().
 				Background(colBg3).Foreground(colFg).Bold(true).
-				Width(totalW - 4).Render("▌ " + rowStr)
+				Width(totalW - 4).Render("▌ " + plainRowStr)
 		} else {
 			rowStr = lipgloss.NewStyle().Foreground(colFg).Width(totalW - 4).Render("  " + rowStr)
 		}
@@ -520,9 +521,10 @@ func (m rootModel) renderRegistry(totalW, height int, borderColor lipgloss.Color
 		rowStr := padRight(nameStr, nameW) + padRight(imagesStr, imagesW) + padRight(sizeStr, sizeW) + padRight(vis, visW)
 
 		if i == m.registryCursor {
+			plainRowStr := padRight(ns.name, nameW) + padRight(imagesStr, imagesW) + padRight(sizeStr, sizeW) + padRight(vis, visW)
 			rows = append(rows, lipgloss.NewStyle().
 				Background(colBg3).Foreground(colFg).Bold(true).
-				Width(totalW-4).Render("▌ "+rowStr))
+				Width(totalW-4).Render("▌ "+plainRowStr))
 		} else {
 			rows = append(rows, lipgloss.NewStyle().Foreground(colFg).Width(totalW-4).Render("  "+rowStr))
 		}
