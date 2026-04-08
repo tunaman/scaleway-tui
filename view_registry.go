@@ -162,9 +162,10 @@ func (m rootModel) drawRegistryBrowser() string {
 		rowStr := nameCol + modCol + padRight(sizeStr, sizeW) + sb
 
 		if i == m.regBrowserCursor {
+			plainRowStr := padRight(img.name, nameW) + padRight(modStr, modW) + padRight(sizeStr, sizeW) + sb
 			rows = append(rows, lipgloss.NewStyle().
 				Background(colBg3).Foreground(colFg).Bold(true).
-				Width(rowW).Render("▌ "+rowStr))
+				Width(rowW).Render("▌ "+plainRowStr))
 		} else {
 			rows = append(rows, lipgloss.NewStyle().Foreground(colFg).Width(rowW).Render("  "+rowStr))
 		}
@@ -314,9 +315,14 @@ func (m rootModel) renderRegistryVersionPane(paneW, paneH int) string {
 		rowStr := chk + tagCol + sb
 
 		if isCursor {
+			plainChk := "[ ] "
+			if isSelected {
+				plainChk = "[x] "
+			}
+			plainRowStr := plainChk + padRight(tag.name, tagW) + sb
 			rows = append(rows, lipgloss.NewStyle().
 				Background(colBg3).Foreground(colFg).Bold(true).
-				Width(innerW).Render("▌ "+rowStr))
+				Width(innerW).Render("▌ "+plainRowStr))
 		} else {
 			rows = append(rows, lipgloss.NewStyle().Foreground(colFg).Width(innerW).Render("  "+rowStr))
 		}
