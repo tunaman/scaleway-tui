@@ -222,6 +222,9 @@ type rootModel struct {
 	secShowContent      bool
 	secContent          string
 	secContentRevision  uint32
+	secConfirmDelete    bool
+	secConfirmDeleteID  string
+	secConfirmDeleteName string
 
 	// Clients (nil until a profile is activated)
 	minioClient    *minio.Client
@@ -483,6 +486,14 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case secretVersionUpdatedMsg:
 		m.loading = true
 		return m, tea.Batch(m.spin.Tick, m.fetchSecretVersions(m.secBrowserSecret))
+
+	case secretCreatedMsg:
+		m.loading = true
+		return m, tea.Batch(m.spin.Tick, m.fetchData())
+
+	case secretDeletedMsg:
+		m.loading = true
+		return m, tea.Batch(m.spin.Tick, m.fetchData())
 
 	case bucketContentsMsg:
 		m.loading = false

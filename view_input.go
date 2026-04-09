@@ -37,6 +37,10 @@ func (m rootModel) renderInputOverlay(base string) string {
 		title = "  UPDATE VERSION DESCRIPTION"
 		subtitle = "  Enter a new description (leave blank to clear)."
 		placeholder = "description..."
+	case inputModeSecret:
+		title = "  NEW SECRET"
+		subtitle = "  Enter a name for the new secret."
+		placeholder = "my-secret-name"
 	}
 
 	titleRendered := lipgloss.NewStyle().Foreground(colGreen).Bold(true).Render(title)
