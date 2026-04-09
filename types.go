@@ -148,6 +148,7 @@ const (
 	inputModeUpload
 	inputModeSecretNewVersion
 	inputModeSecretUpdateDesc
+	inputModeSecret
 )
 
 // createDoneMsg is sent after a successful create/upload operation.
@@ -194,6 +195,8 @@ type secretVersionContentMsg struct {
 
 type secretVersionCreatedMsg struct{}
 type secretVersionUpdatedMsg struct{}
+type secretCreatedMsg struct{}
+type secretDeletedMsg struct{}
 
 type k8sNodePoolsMsg struct {
 	cluster   cluster

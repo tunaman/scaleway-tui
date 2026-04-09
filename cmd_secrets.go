@@ -96,6 +96,44 @@ func (m rootModel) createSecretVersion(secretID, data string) tea.Cmd {
 	}
 }
 
+func (m rootModel) deleteSecret(id string) tea.Cmd {
+	return func() tea.Msg {
+		api := secret.NewAPI(m.scwClient)
+		region := scw.Region(m.activeRegion)
+		if region == "" {
+			region = scw.RegionNlAms
+		}
+		err := api.DeleteSecret(&secret.DeleteSecretRequest{
+			Region:   region,
+			SecretID: id,
+		})
+		if err != nil {
+			return errMsg{fmt.Errorf("delete secret: %w", err)}
+		}
+		return secretDeletedMsg{}
+	}
+}
+
+func (m rootModel) createSecret(name string) tea.Cmd {
+	return func() tea.Msg {
+		api := secret.NewAPI(m.scwClient)
+		region := scw.Region(m.activeRegion)
+		if region == "" {
+			region = scw.RegionNlAms
+		}
+		projectID := m.projectID
+		_, err := api.CreateSecret(&secret.CreateSecretRequest{
+			Region:    region,
+			ProjectID: projectID,
+			Name:      name,
+		})
+		if err != nil {
+			return errMsg{fmt.Errorf("create secret: %w", err)}
+		}
+		return secretCreatedMsg{}
+	}
+}
+
 func (m rootModel) updateSecretVersionDesc(secretID string, revision uint32, desc string) tea.Cmd {
 	return func() tea.Msg {
 		api := secret.NewAPI(m.scwClient)

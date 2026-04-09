@@ -49,6 +49,10 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.input.active = false
 				m.loading = true
 				return m, tea.Batch(m.spin.Tick, m.createFolder(m.browserBucket, m.browserPrefix, val))
+			case inputModeSecret:
+				m.input.active = false
+				m.loading = true
+				return m, tea.Batch(m.spin.Tick, m.createSecret(val))
 			case inputModeSecretNewVersion:
 				m.input.active = false
 				m.loading = true
@@ -464,6 +468,26 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// ── Secret delete confirm ──
+	if m.secConfirmDelete {
+		switch msg.String() {
+		case "ctrl+c":
+			return m, tea.Quit
+		case "y", "Y":
+			id := m.secConfirmDeleteID
+			m.secConfirmDelete = false
+			m.secConfirmDeleteID = ""
+			m.secConfirmDeleteName = ""
+			m.loading = true
+			return m, tea.Batch(m.spin.Tick, m.deleteSecret(id))
+		default:
+			m.secConfirmDelete = false
+			m.secConfirmDeleteID = ""
+			m.secConfirmDeleteName = ""
+		}
+		return m, nil
+	}
+
 	switch msg.String() {
 	case "ctrl+c", "q":
 		if m.showConfirm || m.input.active || m.secShowContent {
@@ -673,7 +697,7 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.input.errStr = ""
 		}
 	case "c", "C":
-		if m.loading || m.showConfirm {
+		if m.loading || m.showConfirm || m.secConfirmDelete {
 			return m, nil
 		}
 		if m.state == stateDashboard && m.focus == focusContent && m.activeService == serviceObjectStorage {
@@ -685,6 +709,12 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else if m.state == stateObjectBrowser {
 			m.input.active = true
 			m.input.mode = inputModeFolder
+			m.input.value = ""
+			m.input.cursor = 0
+			m.input.errStr = ""
+		} else if m.state == stateDashboard && m.focus == focusContent && m.activeService == serviceSecrets {
+			m.input.active = true
+			m.input.mode = inputModeSecret
 			m.input.value = ""
 			m.input.cursor = 0
 			m.input.errStr = ""
@@ -708,6 +738,15 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case "d", "D":
+		if m.state == stateDashboard && m.activeService == serviceSecrets && m.focus == focusContent && !m.loading && !m.secConfirmDelete {
+			visible := m.filteredSecrets()
+			if len(visible) > 0 && m.secretCursor < len(visible) {
+				s := visible[m.secretCursor]
+				m.secConfirmDeleteID = s.id
+				m.secConfirmDeleteName = s.name
+				m.secConfirmDelete = true
+			}
+		}
 		if m.state == stateObjectBrowser && !m.loading && !m.showConfirm {
 			var targets []bucketEntry
 			if len(m.browserSelected) > 0 {

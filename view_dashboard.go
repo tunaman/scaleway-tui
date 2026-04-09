@@ -53,6 +53,9 @@ func (m rootModel) drawDashboard() string {
 	if m.input.active {
 		return m.renderInputOverlay(base)
 	}
+	if m.secConfirmDelete {
+		return m.renderSecretDeleteConfirm(base)
+	}
 	if m.billingProjectOverlay {
 		return m.renderBillingProjectOverlay()
 	}
@@ -162,7 +165,8 @@ func (m rootModel) renderStatusBar() string {
 		return k + d
 	}
 	var keys string
-	if m.activeService == serviceBilling {
+	switch {
+	case m.activeService == serviceBilling:
 		keys = lipgloss.JoinHorizontal(lipgloss.Top,
 			hotkey("←→", "Month"),
 			hotkey("↑↓", "Navigate"),
@@ -172,7 +176,19 @@ func (m rootModel) renderStatusBar() string {
 			hotkey("F5", "Refresh"),
 			hotkey("Q", "Quit"),
 		)
-	} else {
+	case m.activeService == serviceSecrets && m.state == stateDashboard:
+		keys = lipgloss.JoinHorizontal(lipgloss.Top,
+			hotkey("F5", "Refresh"),
+			hotkey("Tab", "Focus"),
+			hotkey("↑↓", "Navigate"),
+			hotkey("Enter", "Open"),
+			hotkey("/", "Filter"),
+			hotkey("C", "New secret"),
+			hotkey("D", "Delete"),
+			hotkey("Esc", "Back"),
+			hotkey("Q", "Quit"),
+		)
+	case m.activeService == serviceObjectStorage && m.state == stateDashboard:
 		keys = lipgloss.JoinHorizontal(lipgloss.Top,
 			hotkey("F5", "Refresh"),
 			hotkey("Tab", "Focus"),
@@ -180,6 +196,16 @@ func (m rootModel) renderStatusBar() string {
 			hotkey("Enter", "Open"),
 			hotkey("/", "Filter"),
 			hotkey("C", "New bucket"),
+			hotkey("Esc", "Back"),
+			hotkey("Q", "Quit"),
+		)
+	default:
+		keys = lipgloss.JoinHorizontal(lipgloss.Top,
+			hotkey("F5", "Refresh"),
+			hotkey("Tab", "Focus"),
+			hotkey("↑↓", "Navigate"),
+			hotkey("Enter", "Open"),
+			hotkey("/", "Filter"),
 			hotkey("Esc", "Back"),
 			hotkey("Q", "Quit"),
 		)
@@ -674,5 +700,66 @@ func (m rootModel) renderSecrets(totalW, height int, borderColor lipgloss.Color)
 		lipgloss.JoinVertical(lipgloss.Left, rows...),
 	)
 	return panelBox(panelTitle, totalW, height, borderColor, content)
+}
+
+// ─────────────────────────────────────────────
+// Secret delete confirm overlay
+// ─────────────────────────────────────────────
+
+func (m rootModel) renderSecretDeleteConfirm(base string) string {
+	const dialogW = 54
+	const innerW = dialogW - 6
+
+	bg := lipgloss.NewStyle().Background(colBg2)
+
+	name := m.secConfirmDeleteName
+	if lipgloss.Width(name) > innerW-4 {
+		rr := []rune(name)
+		name = string(rr[:innerW-5]) + "…"
+	}
+
+	heading := bg.Foreground(colRed).Bold(true).Width(innerW).Render("Delete secret?")
+	warn := bg.Foreground(colComment).Width(innerW).Render("This action cannot be undone.")
+	item := bg.Width(innerW).Render("  " +
+		lipgloss.NewStyle().Background(colBg2).Foreground(colFg).Render(name))
+	empty := bg.Width(innerW).Render("")
+	divider := bg.Foreground(colBg3).Width(innerW).Render(strings.Repeat("─", innerW))
+
+	btnW := (innerW - 1) / 2
+	leftW := btnW + ((innerW - 1) % 2)
+	yesBtn := lipgloss.NewStyle().
+		Background(colRed).Foreground(lipgloss.Color("#ffffff")).
+		Bold(true).Width(leftW).Align(lipgloss.Center).
+		Render("Y  Yes, delete")
+	noBtn := lipgloss.NewStyle().
+		Background(colBg3).Foreground(colFg).
+		Width(btnW).Align(lipgloss.Center).
+		Render("N  Cancel")
+	buttons := lipgloss.JoinHorizontal(lipgloss.Top,
+		yesBtn,
+		lipgloss.NewStyle().Background(colBg2).Width(1).Render(""),
+		noBtn,
+	)
+
+	body := bg.Width(innerW).Render(
+		lipgloss.JoinVertical(lipgloss.Left,
+			heading, warn, empty, item,
+			empty, divider, empty,
+			buttons,
+		),
+	)
+
+	dialog := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(colRed).
+		Background(colBg2).
+		Padding(1, 2).
+		Width(dialogW).
+		Render(body)
+
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, dialog,
+		lipgloss.WithWhitespaceChars(" "),
+		lipgloss.WithWhitespaceForeground(colBg),
+	)
 }
 
