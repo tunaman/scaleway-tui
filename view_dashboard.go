@@ -335,7 +335,11 @@ func (m rootModel) renderBuckets(totalW, height int, borderColor lipgloss.Color)
 		b := visible[i]
 		var name string
 		if m.bucketFilter != "" {
-			name = highlightMatch(b.name, m.bucketFilter)
+			if i == m.bucketCursor {
+				name = b.name // plain: ANSI codes from highlightMatch break the row background
+			} else {
+				name = highlightMatch(b.name, m.bucketFilter)
+			}
 		} else {
 			name = b.name
 			runes := []rune(name)
@@ -416,7 +420,7 @@ func (m rootModel) renderBucketDetail() string {
 
 	// Align values in the Usage block by padding keys to the same width.
 	usageKey := func(key, val string, valColor lipgloss.Color) string {
-		k := lipgloss.NewStyle().Foreground(colComment).Render(padRight(key, 9))
+		k := lipgloss.NewStyle().Foreground(colComment).Render(" " + padRight(key, 9))
 		v := lipgloss.NewStyle().Foreground(valColor).Render(" " + val + " ")
 		return k + v
 	}
@@ -424,12 +428,12 @@ func (m rootModel) renderBucketDetail() string {
 	lines := []string{
 		lipgloss.NewStyle().Foreground(colBlue).Bold(true).Render(" " + nameDisplay + " "),
 		"",
-		lipgloss.NewStyle().Foreground(colComment).Render("Created: ") +
+		lipgloss.NewStyle().Foreground(colComment).Render(" Created: ") +
 			lipgloss.NewStyle().Foreground(colFg).Render(" "+b.created+" "),
-		lipgloss.NewStyle().Foreground(colComment).Render("Region:  ") +
+		lipgloss.NewStyle().Foreground(colComment).Render(" Region:  ") +
 			lipgloss.NewStyle().Foreground(colBlue).Render(" "+m.activeRegion+" "),
 		"",
-		lipgloss.NewStyle().Foreground(colComment).Bold(true).Render("Usage:"),
+		lipgloss.NewStyle().Foreground(colComment).Bold(true).Render(" Usage:"),
 	}
 
 	if b.sizeReady {
@@ -455,8 +459,8 @@ func (m rootModel) renderClusters(totalW, height int, borderColor lipgloss.Color
 	statusW := 12
 	versionW := 10
 
-	header := lipgloss.NewStyle().Foreground(colComment).Bold(true).Render(
-		padRight("CLUSTER", nameW) + padRight("VERSION", versionW) + padRight("STATUS", statusW),
+	header := "  " + lipgloss.NewStyle().Foreground(colComment).Bold(true).Render(
+		padRight("CLUSTER", nameW)+padRight("VERSION", versionW)+padRight("STATUS", statusW),
 	)
 
 	var rows []string
@@ -477,9 +481,9 @@ func (m rootModel) renderClusters(totalW, height int, borderColor lipgloss.Color
 			plainRowStr := padRight(cl.name, nameW) + padRight(cl.version, versionW) + padRight(cl.status, statusW)
 			rowStr = lipgloss.NewStyle().
 				Background(colBg3).Foreground(colFg).Bold(true).
-				Width(totalW - 4).Render("▌ " + plainRowStr)
+				Width(totalW - 2).Render("▌ " + plainRowStr)
 		} else {
-			rowStr = lipgloss.NewStyle().Foreground(colFg).Width(totalW - 4).Render("  " + rowStr)
+			rowStr = lipgloss.NewStyle().Foreground(colFg).Width(totalW - 2).Render("  " + rowStr)
 		}
 		rows = append(rows, rowStr)
 	}
@@ -550,9 +554,9 @@ func (m rootModel) renderRegistry(totalW, height int, borderColor lipgloss.Color
 			plainRowStr := padRight(ns.name, nameW) + padRight(imagesStr, imagesW) + padRight(sizeStr, sizeW) + padRight(vis, visW)
 			rows = append(rows, lipgloss.NewStyle().
 				Background(colBg3).Foreground(colFg).Bold(true).
-				Width(totalW-4).Render("▌ "+plainRowStr))
+				Width(totalW-2).Render("▌ "+plainRowStr))
 		} else {
-			rows = append(rows, lipgloss.NewStyle().Foreground(colFg).Width(totalW-4).Render("  "+rowStr))
+			rows = append(rows, lipgloss.NewStyle().Foreground(colFg).Width(totalW-2).Render("  "+rowStr))
 		}
 	}
 
