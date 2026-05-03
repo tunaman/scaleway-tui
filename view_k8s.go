@@ -2,9 +2,10 @@ package main
 
 import (
 	"fmt"
+	"image/color"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 )
 
 // ─────────────────────────────────────────────
@@ -115,7 +116,7 @@ func poolZoneShort(zone string) string {
 	return strings.ToUpper(parts[1]) + "-" + parts[2]
 }
 
-func (m rootModel) renderK8sPoolPane(paneW, paneH int, borderColor lipgloss.Color) string {
+func (m rootModel) renderK8sPoolPane(paneW, paneH int, borderColor color.Color) string {
 	pools := m.k8sBrowserNodePools
 	listH := max(1, paneH-listRowOverhead)
 	rowW := paneW - 2
@@ -230,7 +231,7 @@ func (m rootModel) renderK8sPoolPane(paneW, paneH int, borderColor lipgloss.Colo
 	return panelBox("NODE POOLS", paneW, paneH, borderColor, listContent)
 }
 
-func (m rootModel) renderK8sNodePane(paneW, paneH int, borderColor lipgloss.Color) string {
+func (m rootModel) renderK8sNodePane(paneW, paneH int, borderColor color.Color) string {
 	nodes := m.k8sBrowserNodes
 	listH := max(1, paneH-listRowOverhead)
 	rowW := paneW - 2
@@ -360,7 +361,7 @@ func (m rootModel) renderK8sReplaceConfirm(_ string) string {
 
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, dialog,
 		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceForeground(colBg),
+		lipgloss.WithWhitespaceStyle(lipgloss.NewStyle().Foreground(colBg)),
 	)
 }
 
@@ -401,6 +402,6 @@ func (m rootModel) renderK8sRebootConfirm(base string) string {
 
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, dialog,
 		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceForeground(colBg),
+		lipgloss.WithWhitespaceStyle(lipgloss.NewStyle().Foreground(colBg)),
 	)
 }

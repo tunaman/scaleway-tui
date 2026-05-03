@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/charmbracelet/bubbles/spinner"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/spinner"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/minio/minio-go/v7"
 	"github.com/scaleway/scaleway-sdk-go/scw"
 )
@@ -259,7 +259,7 @@ type rootModel struct {
 // ─────────────────────────────────────────────
 
 func (m rootModel) Init() tea.Cmd {
-	return tea.Batch(m.spin.Tick, tea.EnableBracketedPaste, tea.SetWindowTitle("Scaleway TUI "+version))
+	return m.spin.Tick
 }
 
 // ─────────────────────────────────────────────
@@ -562,7 +562,7 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.billingExportMsg = "Exported → " + msg.path
 		return m, nil
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		return m.handleKey(msg)
 	}
 
@@ -573,20 +573,26 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // View
 // ─────────────────────────────────────────────
 
-func (m rootModel) View() string {
+func (m rootModel) View() tea.View {
+	var content string
 	switch m.state {
 	case stateProfilePicker:
-		return m.drawProfilePicker()
+		content = m.drawProfilePicker()
 	case stateObjectBrowser:
-		return m.drawObjectBrowser()
+		content = m.drawObjectBrowser()
 	case stateRegistryBrowser:
-		return m.drawRegistryBrowser()
+		content = m.drawRegistryBrowser()
 	case stateK8sBrowser:
-		return m.drawK8sBrowser()
+		content = m.drawK8sBrowser()
 	case stateSecretsBrowser:
-		return m.drawSecretsBrowser()
+		content = m.drawSecretsBrowser()
 	default:
-		return m.drawDashboard()
+		content = m.drawDashboard()
+	}
+	return tea.View{
+		Content:     content,
+		AltScreen:   true,
+		WindowTitle: "Scaleway TUI " + version,
 	}
 }
 
@@ -642,7 +648,7 @@ func main() {
 		prevBucketSel: -1,
 	}
 
-	p := tea.NewProgram(m, tea.WithAltScreen())
+	p := tea.NewProgram(m)
 	teaProgram = p
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)

@@ -2,10 +2,11 @@ package main
 
 import (
 	"fmt"
+	"image/color"
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 )
 
 // ─────────────────────────────────────────────
@@ -70,7 +71,7 @@ func (m rootModel) drawDashboard() string {
 // ─────────────────────────────────────────────
 
 func (m rootModel) renderTopBar() string {
-	pill := func(text string, color lipgloss.Color) string {
+	pill := func(text string, color color.Color) string {
 		return lipgloss.NewStyle().
 			Foreground(color).
 			Border(lipgloss.RoundedBorder()).
@@ -286,7 +287,7 @@ func (m rootModel) renderContent(height int) string {
 // Object Storage view
 // ─────────────────────────────────────────────
 
-func (m rootModel) renderBuckets(totalW, height int, borderColor lipgloss.Color) string {
+func (m rootModel) renderBuckets(totalW, height int, borderColor color.Color) string {
 	listW := totalW - detailPaneWidth - 1
 	// scrollW=1 col reserved inside content for the vertical scrollbar.
 	// Row layout: prefix(2) + name(nameW) + scrollbar(1) = innerW = listW-2
@@ -419,7 +420,7 @@ func (m rootModel) renderBucketDetail() string {
 	}
 
 	// Align values in the Usage block by padding keys to the same width.
-	usageKey := func(key, val string, valColor lipgloss.Color) string {
+	usageKey := func(key, val string, valColor color.Color) string {
 		k := lipgloss.NewStyle().Foreground(colComment).Render(" " + padRight(key, 9))
 		v := lipgloss.NewStyle().Foreground(valColor).Render(" " + val + " ")
 		return k + v
@@ -454,7 +455,7 @@ func (m rootModel) renderBucketDetail() string {
 // K8s Clusters view
 // ─────────────────────────────────────────────
 
-func (m rootModel) renderClusters(totalW, height int, borderColor lipgloss.Color) string {
+func (m rootModel) renderClusters(totalW, height int, borderColor color.Color) string {
 	nameW := totalW - 30
 	statusW := 12
 	versionW := 10
@@ -500,7 +501,7 @@ func (m rootModel) renderClusters(totalW, height int, borderColor lipgloss.Color
 // Container Registry view
 // ─────────────────────────────────────────────
 
-func (m rootModel) renderRegistry(totalW, height int, borderColor lipgloss.Color) string {
+func (m rootModel) renderRegistry(totalW, height int, borderColor color.Color) string {
 	nameW := totalW - 32
 	imagesW := 8
 	sizeW := 10
@@ -593,7 +594,7 @@ func (m rootModel) renderRegistry(totalW, height int, borderColor lipgloss.Color
 // Secrets Manager view
 // ─────────────────────────────────────────────
 
-func (m rootModel) renderSecrets(totalW, height int, borderColor lipgloss.Color) string {
+func (m rootModel) renderSecrets(totalW, height int, borderColor color.Color) string {
 	// scrollW=1 col reserved for the vertical scrollbar.
 	// Row layout: prefix(2) + nameW + versionsW + statusW + scrollbar(1) = innerW = totalW-2
 	const scrollW = 1
@@ -763,7 +764,7 @@ func (m rootModel) renderSecretDeleteConfirm(base string) string {
 
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, dialog,
 		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceForeground(colBg),
+		lipgloss.WithWhitespaceStyle(lipgloss.NewStyle().Foreground(colBg)),
 	)
 }
 
