@@ -4,14 +4,14 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 // ─────────────────────────────────────────────
 // Key handling
 // ─────────────────────────────────────────────
 
-func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// ── Input overlay: intercept all keys while active ──
 	if m.input.active {
 		runes := []rune(m.input.value)
@@ -132,9 +132,9 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.input.errStr = ""
 
 		default:
-			// msg.Runes contains the typed/pasted characters.
-			if len(msg.Runes) > 0 {
-				insert := msg.Runes
+			// msg.Text contains the typed/pasted characters.
+			if msg.Text != "" {
+				insert := []rune(msg.Text)
 				newRunes := make([]rune, 0, len(runes)+len(insert))
 				newRunes = append(newRunes, runes[:m.input.cursor]...)
 				newRunes = append(newRunes, insert...)
@@ -177,8 +177,8 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.handleDown()
 		default:
 			// Only accept printable single chars.
-			if len(msg.Runes) == 1 {
-				m.bucketFilter += string(msg.Runes)
+			if len([]rune(msg.Text)) == 1 {
+				m.bucketFilter += msg.Text
 				m.bucketCursor = 0
 				m.bucketScrollY = 0
 			}
@@ -321,8 +321,8 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "down":
 			return m.handleDown()
 		default:
-			if len(msg.Runes) == 1 {
-				m.regBrowserFilter += string(msg.Runes)
+			if len([]rune(msg.Text)) == 1 {
+				m.regBrowserFilter += msg.Text
 				m.regBrowserCursor = 0
 				m.regBrowserScrollY = 0
 			}
@@ -357,8 +357,8 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "down":
 			return m.handleDown()
 		default:
-			if len(msg.Runes) == 1 {
-				m.regTagFilter += string(msg.Runes)
+			if len([]rune(msg.Text)) == 1 {
+				m.regTagFilter += msg.Text
 				m.regBrowserTagCursor = 0
 				m.regBrowserTagScrollY = 0
 			}
@@ -391,8 +391,8 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "down":
 			return m.handleDown()
 		default:
-			if len(msg.Runes) == 1 {
-				m.registryFilter += string(msg.Runes)
+			if len([]rune(msg.Text)) == 1 {
+				m.registryFilter += msg.Text
 				m.registryCursor = 0
 				m.registryScrollY = 0
 			}
@@ -425,8 +425,8 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "down":
 			return m.handleDown()
 		default:
-			if len(msg.Runes) == 1 {
-				m.secretFilter += string(msg.Runes)
+			if len([]rune(msg.Text)) == 1 {
+				m.secretFilter += msg.Text
 				m.secretCursor = 0
 				m.secretScrollY = 0
 			}
@@ -459,8 +459,8 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "down":
 			return m.handleDown()
 		default:
-			if len(msg.Runes) == 1 {
-				m.secBrowserFilter += string(msg.Runes)
+			if len([]rune(msg.Text)) == 1 {
+				m.secBrowserFilter += msg.Text
 				m.secBrowserCursor = 0
 				m.secBrowserScrollY = 0
 			}
@@ -871,7 +871,7 @@ func (m rootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleDown()
 	case "enter":
 		return m.handleEnter()
-	case " ":
+	case "space":
 		if m.state == stateObjectBrowser && len(m.browserEntries) > 0 {
 			key := m.browserEntries[m.browserCursor].fullKey
 			if m.browserSelected == nil {

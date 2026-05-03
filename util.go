@@ -2,10 +2,11 @@ package main
 
 import (
 	"fmt"
+	"image/color"
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 	"github.com/scaleway/scaleway-sdk-go/scw"
 )
 
@@ -14,7 +15,7 @@ import (
 // ─────────────────────────────────────────────
 
 // panelBox renders a btop-style bordered box with a title embedded in the top border.
-func panelBox(title string, w, h int, borderColor lipgloss.Color, content string, rightGutter ...string) string {
+func panelBox(title string, w, h int, borderColor color.Color, content string, rightGutter ...string) string {
 	bc := lipgloss.NormalBorder()
 
 	titleStr := " " + title + " "

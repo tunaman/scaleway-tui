@@ -1,9 +1,10 @@
 package main
 
 import (
+	"image/color"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 )
 
 // ─────────────────────────────────────────────
@@ -47,7 +48,7 @@ func (m rootModel) drawProfilePicker() string {
 	const btnW = 14
 	type actionDef struct {
 		label string
-		color lipgloss.Color
+		color color.Color
 	}
 	actions := []actionDef{
 		{"CONNECT", colGreen},

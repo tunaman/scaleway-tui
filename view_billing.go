@@ -2,10 +2,11 @@ package main
 
 import (
 	"fmt"
+	"image/color"
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 )
 
 // ─────────────────────────────────────────────
@@ -14,7 +15,7 @@ import (
 
 // renderBillingContent renders the billing chart and detail table inside the
 // dashboard content panel (nav remains visible).
-func (m rootModel) renderBillingContent(totalW, height int, borderColor lipgloss.Color) string {
+func (m rootModel) renderBillingContent(totalW, height int, borderColor color.Color) string {
 	if m.loading {
 		inner := lipgloss.Place(
 			totalW-4, height-listRowOverhead,
@@ -95,7 +96,7 @@ func (m rootModel) renderBillingProjectOverlay() string {
 
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, dialog,
 		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceForeground(colBg),
+		lipgloss.WithWhitespaceStyle(lipgloss.NewStyle().Foreground(colBg)),
 	)
 }
 
@@ -154,7 +155,7 @@ func (m rootModel) renderBillingExportOverlay() string {
 
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, dialog,
 		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceForeground(colBg),
+		lipgloss.WithWhitespaceStyle(lipgloss.NewStyle().Foreground(colBg)),
 	)
 }
 

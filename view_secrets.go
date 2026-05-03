@@ -2,9 +2,10 @@ package main
 
 import (
 	"fmt"
+	"image/color"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 )
 
 // ─────────────────────────────────────────────
@@ -186,7 +187,7 @@ func (m rootModel) renderSecretVersionDetailPane(paneW, paneH int) string {
 	v := visible[m.secBrowserCursor]
 	innerW := paneW - 4
 
-	row := func(label, val string, valColor lipgloss.Color) string {
+	row := func(label, val string, valColor color.Color) string {
 		k := lipgloss.NewStyle().Foreground(colComment).Render(padRight(label, 12))
 		vv := lipgloss.NewStyle().Foreground(valColor).Render(val)
 		return k + vv
@@ -329,6 +330,6 @@ func (m rootModel) renderSecretContentOverlay() string {
 
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, dialog,
 		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceForeground(colBg),
+		lipgloss.WithWhitespaceStyle(lipgloss.NewStyle().Foreground(colBg)),
 	)
 }
