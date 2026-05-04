@@ -562,6 +562,20 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.billingExportMsg = "Exported → " + msg.path
 		return m, nil
 
+	case tea.PasteMsg:
+		if m.input.active && msg.Content != "" {
+			runes := []rune(m.input.value)
+			insert := []rune(msg.Content)
+			newRunes := make([]rune, 0, len(runes)+len(insert))
+			newRunes = append(newRunes, runes[:m.input.cursor]...)
+			newRunes = append(newRunes, insert...)
+			newRunes = append(newRunes, runes[m.input.cursor:]...)
+			m.input.value = string(newRunes)
+			m.input.cursor += len(insert)
+			m.input.errStr = ""
+		}
+		return m, nil
+
 	case tea.KeyPressMsg:
 		return m.handleKey(msg)
 	}
