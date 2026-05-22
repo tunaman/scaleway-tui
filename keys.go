@@ -171,13 +171,12 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			}
 			m.bucketCursor = 0
 			m.bucketScrollY = 0
-		case "up", "k":
+		case "up":
 			return m.handleUp()
-		case "down", "j":
+		case "down":
 			return m.handleDown()
 		default:
-			// Only accept printable single chars.
-			if len([]rune(msg.Text)) == 1 {
+			if msg.Text != "" {
 				m.bucketFilter += msg.Text
 				m.bucketCursor = 0
 				m.bucketScrollY = 0
