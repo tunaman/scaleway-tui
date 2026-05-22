@@ -563,7 +563,10 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.PasteMsg:
-		if m.input.active && msg.Content != "" {
+		if msg.Content == "" {
+			return m, nil
+		}
+		if m.input.active {
 			runes := []rune(m.input.value)
 			insert := []rune(msg.Content)
 			newRunes := make([]rune, 0, len(runes)+len(insert))
@@ -573,6 +576,30 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.input.value = string(newRunes)
 			m.input.cursor += len(insert)
 			m.input.errStr = ""
+		} else if m.bucketFiltering {
+			m.bucketFilter += msg.Content
+			m.bucketCursor = 0
+			m.bucketScrollY = 0
+		} else if m.registryFiltering {
+			m.registryFilter += msg.Content
+			m.registryCursor = 0
+			m.registryScrollY = 0
+		} else if m.regBrowserFiltering {
+			m.regBrowserFilter += msg.Content
+			m.regBrowserCursor = 0
+			m.regBrowserScrollY = 0
+		} else if m.regTagFiltering {
+			m.regTagFilter += msg.Content
+			m.regBrowserTagCursor = 0
+			m.regBrowserTagScrollY = 0
+		} else if m.secretFiltering {
+			m.secretFilter += msg.Content
+			m.secretCursor = 0
+			m.secretScrollY = 0
+		} else if m.secBrowserFiltering {
+			m.secBrowserFilter += msg.Content
+			m.secBrowserCursor = 0
+			m.secBrowserScrollY = 0
 		}
 		return m, nil
 
