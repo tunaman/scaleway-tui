@@ -5,7 +5,7 @@ go 1.26.1
 require (
 	charm.land/bubbles/v2 v2.1.0
 	charm.land/bubbletea/v2 v2.0.8
-	charm.land/lipgloss/v2 v2.0.4
+	charm.land/lipgloss/v2 v2.0.5
 	github.com/minio/minio-go/v7 v7.2.1
 	github.com/scaleway/scaleway-sdk-go v1.0.0-beta.36
 )
