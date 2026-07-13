@@ -111,6 +111,75 @@ type secretVersion struct {
 }
 
 // ─────────────────────────────────────────────
+// IAM data types (organization-scoped, read-only)
+// ─────────────────────────────────────────────
+
+// IAM sub-tabs shown in the browser tab strip.
+const (
+	iamTabUsers = iota
+	iamTabApplications
+	iamTabGroups
+	iamTabPolicies
+	iamTabAPIKeys
+	iamTabLogs
+	iamTabCount
+)
+
+type iamUser struct {
+	id          string
+	email       string
+	userType    string // "owner" / "member"
+	status      string // "activated" / "invitation_pending" / ""
+	mfa         bool
+	lastLoginAt time.Time
+	tags        []string
+}
+
+type iamApplication struct {
+	id          string
+	name        string
+	description string
+	nbAPIKeys   uint32
+	tags        []string
+}
+
+type iamGroup struct {
+	id          string
+	name        string
+	description string
+	nbUsers     int
+	nbApps      int
+	tags        []string
+}
+
+type iamPolicy struct {
+	id            string
+	name          string
+	nbRules       uint32
+	principalKind string // "User" / "Group" / "Application" / "—"
+	principalID   string // resolved to a name at render time when possible
+	tags          []string
+}
+
+type iamAPIKey struct {
+	accessKey   string
+	description string
+	bearerKind  string // "User" / "Application"
+	bearerID    string // resolved to a name at render time when possible
+	createdAt   time.Time
+	expiresAt   time.Time // zero = never expires
+}
+
+type iamLog struct {
+	id           string
+	createdAt    time.Time
+	action       string // "created" / "updated" / "deleted"
+	resourceType string // "user" / "api_key" / ...
+	resourceID   string
+	bearerID     string // actor, resolved to a name at render time when possible
+}
+
+// ─────────────────────────────────────────────
 // Tea messages
 // ─────────────────────────────────────────────
 
@@ -191,6 +260,16 @@ type secretVersionsMsg struct {
 type secretVersionContentMsg struct {
 	revision uint32
 	content  string
+}
+
+// iamDataMsg carries all six IAM lists loaded in one shot.
+type iamDataMsg struct {
+	users        []iamUser
+	applications []iamApplication
+	groups       []iamGroup
+	policies     []iamPolicy
+	apiKeys      []iamAPIKey
+	logs         []iamLog
 }
 
 type secretVersionCreatedMsg struct{}

@@ -467,6 +467,41 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// ── IAM browser filter mode ──
+	if m.iamFiltering {
+		switch msg.String() {
+		case "esc":
+			m.iamFiltering = false
+			m.iamFilter = ""
+			m.iamCursor = 0
+			m.iamScrollY = 0
+		case "enter":
+			m.iamFiltering = false
+			m.iamCursor = 0
+			m.iamScrollY = 0
+		case "backspace", "ctrl+h":
+			if len([]rune(m.iamFilter)) > 0 {
+				runes := []rune(m.iamFilter)
+				m.iamFilter = string(runes[:len(runes)-1])
+			} else {
+				m.iamFiltering = false
+			}
+			m.iamCursor = 0
+			m.iamScrollY = 0
+		case "up":
+			return m.handleUp()
+		case "down":
+			return m.handleDown()
+		default:
+			if msg.Text != "" {
+				m.iamFilter += msg.Text
+				m.iamCursor = 0
+				m.iamScrollY = 0
+			}
+		}
+		return m, nil
+	}
+
 	// ── Secret delete confirm ──
 	if m.secConfirmDelete {
 		switch msg.String() {
@@ -574,6 +609,13 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.secretScrollY = 0
 			return m, nil
 		}
+		// Clear IAM browser filter if active.
+		if m.iamFilter != "" {
+			m.iamFilter = ""
+			m.iamCursor = 0
+			m.iamScrollY = 0
+			return m, nil
+		}
 		return m.handleEsc()
 	case "f5":
 		if !m.loading {
@@ -597,6 +639,9 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			}
 			if m.state == stateSecretsBrowser {
 				return m, tea.Batch(m.spin.Tick, m.fetchSecretVersions(m.secBrowserSecret))
+			}
+			if m.state == stateIAMBrowser {
+				return m, tea.Batch(m.spin.Tick, m.fetchIAM())
 			}
 			return m, tea.Batch(m.spin.Tick, m.fetchData())
 		}
@@ -636,6 +681,12 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.secBrowserFilter = ""
 			m.secBrowserCursor = 0
 			m.secBrowserScrollY = 0
+		}
+		if m.state == stateIAMBrowser && !m.loading {
+			m.iamFiltering = true
+			m.iamFilter = ""
+			m.iamCursor = 0
+			m.iamScrollY = 0
 		}
 		if m.state == stateRegistryBrowser && m.regBrowserFocus == 1 && !m.loading {
 			m.regTagFiltering = true
@@ -805,6 +856,14 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case "tab":
+		if m.state == stateIAMBrowser && !m.loading {
+			m.iamTab = (m.iamTab + 1) % iamTabCount
+			m.iamCursor = 0
+			m.iamScrollY = 0
+			m.iamFilter = ""
+			m.iamFiltering = false
+			return m, nil
+		}
 		if m.state == stateDashboard {
 			m.focus = focusNav + (m.focus-focusNav+1)%2
 			m.showDropdown = false
@@ -834,6 +893,14 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case "left", "h":
+		if m.state == stateIAMBrowser && !m.loading {
+			m.iamTab = (m.iamTab - 1 + iamTabCount) % iamTabCount
+			m.iamCursor = 0
+			m.iamScrollY = 0
+			m.iamFilter = ""
+			m.iamFiltering = false
+			return m, nil
+		}
 		if m.state == stateProfilePicker && !m.loading {
 			m.pickerAction = (m.pickerAction - 1 + pickerActionCount) % pickerActionCount
 		} else if m.state == stateDashboard && m.focus == focusContent && m.activeService == serviceObjectStorage {
@@ -847,6 +914,14 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(m.spin.Tick, m.fetchBillingOverview(m.billingPeriod))
 		}
 	case "right", "l":
+		if m.state == stateIAMBrowser && !m.loading {
+			m.iamTab = (m.iamTab + 1) % iamTabCount
+			m.iamCursor = 0
+			m.iamScrollY = 0
+			m.iamFilter = ""
+			m.iamFiltering = false
+			return m, nil
+		}
 		if m.state == stateProfilePicker && !m.loading {
 			m.pickerAction = (m.pickerAction + 1) % pickerActionCount
 		} else if m.state == stateDashboard && m.focus == focusContent && m.activeService == serviceObjectStorage {
@@ -863,6 +938,15 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				m.billingExportMsg = ""
 				return m, tea.Batch(m.spin.Tick, m.fetchBillingOverview(m.billingPeriod))
 			}
+		}
+	case "shift+tab", "backtab":
+		if m.state == stateIAMBrowser && !m.loading {
+			m.iamTab = (m.iamTab - 1 + iamTabCount) % iamTabCount
+			m.iamCursor = 0
+			m.iamScrollY = 0
+			m.iamFilter = ""
+			m.iamFiltering = false
+			return m, nil
 		}
 	case "up", "k":
 		return m.handleUp()
@@ -965,6 +1049,11 @@ func (m rootModel) handleEsc() (rootModel, tea.Cmd) {
 		m.secBrowserFiltering = false
 		m.secShowContent = false
 		m.secContent = ""
+	case stateIAMBrowser:
+		m.state = stateDashboard
+		m.activeService = serviceIAM
+		m.iamFilter = ""
+		m.iamFiltering = false
 	case stateRegistryBrowser:
 		m.state = stateDashboard
 		m.activeService = serviceRegistry
@@ -1079,6 +1168,14 @@ func (m rootModel) handleUp() (rootModel, tea.Cmd) {
 			}
 		}
 
+	case m.state == stateIAMBrowser:
+		if m.iamVisibleCount() > 0 && m.iamCursor > 0 {
+			m.iamCursor--
+			if m.iamCursor < m.iamScrollY {
+				m.iamScrollY = m.iamCursor
+			}
+		}
+
 	case m.state == stateDashboard && m.focus == focusContent:
 		fb := m.filteredBuckets()
 		if m.activeService == serviceObjectStorage && len(fb) > 0 {
@@ -1182,6 +1279,11 @@ func (m rootModel) handleDown() (rootModel, tea.Cmd) {
 			m.secBrowserCursor++
 		}
 
+	case m.state == stateIAMBrowser:
+		if n := m.iamVisibleCount(); n > 0 && m.iamCursor < n-1 {
+			m.iamCursor++
+		}
+
 	case m.state == stateDashboard && m.focus == focusContent:
 		fb := m.filteredBuckets()
 		if m.activeService == serviceObjectStorage && len(fb) > 0 {
@@ -1257,6 +1359,18 @@ func (m rootModel) handleEnter() (rootModel, tea.Cmd) {
 		s := fs[m.secretCursor]
 		m.loading = true
 		return m, tea.Batch(m.spin.Tick, m.fetchSecretVersions(s))
+
+	case m.state == stateDashboard && m.focus == focusContent &&
+		m.activeService == serviceIAM:
+		if m.iamLoaded {
+			// Data already cached — enter the browser immediately.
+			m.iamFilter = ""
+			m.iamFiltering = false
+			m.state = stateIAMBrowser
+			return m, nil
+		}
+		m.loading = true
+		return m, tea.Batch(m.spin.Tick, m.fetchIAM())
 
 	case m.state == stateSecretsBrowser && !m.loading:
 		visible := m.filteredSecretVersions()

@@ -96,6 +96,31 @@ func highlightMatch(s, needle string) string {
 		after
 }
 
+// stripANSI removes ANSI SGR escape sequences (e.g. color codes) from s,
+// leaving plain text of the same visible width. Used to render a selected row
+// on a solid background — inline color resets would otherwise punch holes in it.
+func stripANSI(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	inEsc := false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if inEsc {
+			// SGR sequences terminate with 'm'; bail on any letter to be safe.
+			if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') {
+				inEsc = false
+			}
+			continue
+		}
+		if c == 0x1b {
+			inEsc = true
+			continue
+		}
+		b.WriteByte(c)
+	}
+	return b.String()
+}
+
 // padRight pads s to exactly n visible characters.
 // If s is wider than n it is truncated and a trailing … is appended.
 func padRight(s string, n int) string {
@@ -112,6 +137,22 @@ func padRight(s string, n int) string {
 		cut = 0
 	}
 	return string(runes[:cut]) + "…"
+}
+
+// fmtDate renders a date as "2 Jan 2006", or "—" for the zero time.
+func fmtDate(t time.Time) string {
+	if t.IsZero() {
+		return "—"
+	}
+	return t.Format("2 Jan 2006")
+}
+
+// fmtDateTime renders a timestamp as "2 Jan 06 15:04", or "—" for the zero time.
+func fmtDateTime(t time.Time) string {
+	if t.IsZero() {
+		return "—"
+	}
+	return t.Format("2 Jan 06 15:04")
 }
 
 func formatBytes(b int64) string {
