@@ -95,6 +95,8 @@ Overlays are rendered conditionally in `View()` on top of the base content using
 ### Styling
 All colors are Dracula palette constants defined near the top of `main.go`. Do not introduce new colors without explicit user approval.
 
+**Selected/highlighted list rows must be rendered as plain (uncolored) text.** When a row is wrapped in a `Background(colBg3)` style, any inline ANSI color reset baked into the row string (per-cell `Foreground(...).Render(...)`, `highlightMatch`, etc.) turns the background off partway across, so the highlight stops short of the right edge. Build cursor rows from plain strings so the background spans the full width — either assemble a separate uncolored `plainRowStr` (see `renderClusters`/`renderRegistry` in `view_dashboard.go`) or strip codes from an already-colored row with `stripANSI` (`util.go`, used by `view_iam.go`). Non-selected rows keep their per-column colors.
+
 ### Navigation
 Vim-style throughout: `j`/`k` to move, `/` to filter, `Enter` to select, `Esc` to go back, `q` to quit.
 
