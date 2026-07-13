@@ -23,6 +23,7 @@ const (
 	stateRegistryBrowser
 	stateSecretsBrowser
 	stateK8sBrowser
+	stateIAMBrowser
 )
 
 // pickerAction is what Enter triggers on the profile picker's action buttons.
@@ -43,6 +44,7 @@ const (
 	serviceBilling
 	serviceRegistry
 	serviceSecrets
+	serviceIAM
 	serviceCount
 )
 
@@ -225,6 +227,21 @@ type rootModel struct {
 	secConfirmDelete    bool
 	secConfirmDeleteID  string
 	secConfirmDeleteName string
+
+	// IAM browser state (stateIAMBrowser) — read-only, org-scoped
+	iamTab          int // iamTabUsers .. iamTabLogs
+	iamUsers        []iamUser
+	iamApplications []iamApplication
+	iamGroups       []iamGroup
+	iamPolicies     []iamPolicy
+	iamAPIKeys      []iamAPIKey
+	iamLogs         []iamLog
+	iamLoaded       bool
+	iamCursor       int
+	iamScrollY      int
+	iamFilter       string
+	iamFiltering    bool
+	iamNames        map[string]string // IAM resource ID → display name (users/apps/groups)
 
 	// Clients (nil until a profile is activated)
 	minioClient    *minio.Client
@@ -495,6 +512,31 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = true
 		return m, tea.Batch(m.spin.Tick, m.fetchData())
 
+	case iamDataMsg:
+		m.loading = false
+		m.iamUsers = msg.users
+		m.iamApplications = msg.applications
+		m.iamGroups = msg.groups
+		m.iamPolicies = msg.policies
+		m.iamAPIKeys = msg.apiKeys
+		m.iamLogs = msg.logs
+		m.iamLoaded = true
+		m.iamCursor = 0
+		m.iamScrollY = 0
+		// Build an ID→name map so principals/bearers/actors show human names.
+		m.iamNames = make(map[string]string, len(msg.users)+len(msg.applications)+len(msg.groups))
+		for _, u := range msg.users {
+			m.iamNames[u.id] = u.email
+		}
+		for _, a := range msg.applications {
+			m.iamNames[a.id] = a.name
+		}
+		for _, g := range msg.groups {
+			m.iamNames[g.id] = g.name
+		}
+		m.state = stateIAMBrowser
+		return m, nil
+
 	case bucketContentsMsg:
 		m.loading = false
 		m.browserBucket = msg.bucket
@@ -600,6 +642,10 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.secBrowserFilter += msg.Content
 			m.secBrowserCursor = 0
 			m.secBrowserScrollY = 0
+		} else if m.iamFiltering {
+			m.iamFilter += msg.Content
+			m.iamCursor = 0
+			m.iamScrollY = 0
 		}
 		return m, nil
 
@@ -627,6 +673,8 @@ func (m rootModel) View() tea.View {
 		content = m.drawK8sBrowser()
 	case stateSecretsBrowser:
 		content = m.drawSecretsBrowser()
+	case stateIAMBrowser:
+		content = m.drawIAMBrowser()
 	default:
 		content = m.drawDashboard()
 	}

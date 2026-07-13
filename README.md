@@ -19,6 +19,7 @@ A keyboard-driven terminal UI for managing your [Scaleway](https://www.scaleway.
 - **Kubernetes cluster browser** — list Kapsule clusters, browse node pools (autoscaling, node type, zone, volume), view nodes with status, and reboot nodes
 - **Container Registry browser** — browse namespaces, images, and tags; copy pull commands
 - **Secrets Manager** — list secrets, browse versions, view secret content, add new versions, and update version descriptions
+- **IAM browser** — read-only, organization-scoped view with tabs for Users, Applications, Groups, Policies, API keys, and Logs; filter within any tab
 - **Billing view** — inspect current-period costs, filter by project, export date-range to CSV
 - **Project switcher** — switch between Scaleway projects without leaving the TUI
 - **Vim-style keyboard navigation** — `j/k`, `/` to filter, and single-key actions throughout
@@ -120,6 +121,17 @@ On first launch you will be presented with a profile picker. Select a profile an
 | `n` | Add a new secret version |
 | `u` | Update description of selected version |
 
+#### IAM
+
+| Key | Action |
+| ----- | -------- |
+| `Enter` | Open the IAM browser (from the dashboard) |
+| `←` / `→` or `Tab` / `Shift+Tab` | Switch tab (Users, Applications, Groups, Policies, API keys, Logs) |
+| `j` / `k` | Navigate rows |
+| `/` | Filter the active tab |
+| `F5` | Refresh all IAM data |
+| `Esc` | Clear filter / back to dashboard |
+
 ## Configuration
 
 scw-tui stores only UI preferences (last active profile) in `~/.config/scw-tui/config.json`. Credentials are never duplicated — they are read exclusively from the official Scaleway config.
@@ -146,5 +158,5 @@ The codebase is a single `package main` split across focused files (`main.go`, `
 | [charmbracelet/bubbletea](https://github.com/charmbracelet/bubbletea) | TUI framework |
 | [charmbracelet/bubbles](https://github.com/charmbracelet/bubbles) | UI components (spinner, etc.) |
 | [charmbracelet/lipgloss](https://github.com/charmbracelet/lipgloss) | Terminal styling (Dracula theme) |
-| [scaleway/scaleway-sdk-go](https://github.com/scaleway/scaleway-sdk-go) | Scaleway API (K8s, billing, account, registry, secrets) |
+| [scaleway/scaleway-sdk-go](https://github.com/scaleway/scaleway-sdk-go) | Scaleway API (K8s, billing, account, registry, secrets, IAM) |
 | [minio/minio-go](https://github.com/minio/minio-go) | S3-compatible object storage |

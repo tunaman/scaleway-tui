@@ -85,7 +85,7 @@ func (m rootModel) renderTopBar() string {
 	// ── Left: breadcrumb ──
 	crumbs := []string{pill(m.project, colGreen)}
 
-	serviceNames := []string{"Object Storage", "K8s Clusters", "Billing", "Container Registry", "Secrets Manager"}
+	serviceNames := []string{"Object Storage", "K8s Clusters", "Billing", "Container Registry", "Secrets Manager", "IAM"}
 	switch m.state {
 	case stateObjectBrowser:
 		crumbs = append(crumbs, sep, pill("Object Storage", colBlue))
@@ -104,6 +104,9 @@ func (m rootModel) renderTopBar() string {
 	case stateSecretsBrowser:
 		crumbs = append(crumbs, sep, pill("Secrets Manager", colBlue))
 		crumbs = append(crumbs, sep, pill(m.secBrowserSecret.name, colPurple))
+	case stateIAMBrowser:
+		crumbs = append(crumbs, sep, pill("IAM", colBlue))
+		crumbs = append(crumbs, sep, pill(iamTabNames[m.iamTab], colPurple))
 	default:
 		if m.activeService < len(serviceNames) {
 			crumbs = append(crumbs, sep, pill(serviceNames[m.activeService], colBlue))
@@ -141,6 +144,8 @@ func (m rootModel) renderTopBar() string {
 		rightInfo = comment(fmt.Sprintf("%d images  ", len(m.regBrowserImages)))
 	case stateSecretsBrowser:
 		rightInfo = comment(fmt.Sprintf("%d versions  ", len(m.secBrowserVersions)))
+	case stateIAMBrowser:
+		rightInfo = comment(fmt.Sprintf("%d items  ", m.iamVisibleCount()))
 	}
 	clock := lipgloss.NewStyle().Foreground(colComment).Render(" " + time.Now().Format("15:04") + " ")
 	rightPart := rightInfo + clock
@@ -232,6 +237,7 @@ func (m rootModel) renderNav(height int) string {
 		{"Billing"},
 		{"Container Registry"},
 		{"Secrets Manager"},
+		{"IAM"},
 	}
 
 	sectionHeader := lipgloss.NewStyle().Foreground(colComment).PaddingLeft(1).PaddingBottom(1).Render("SERVICES")
@@ -279,6 +285,8 @@ func (m rootModel) renderContent(height int) string {
 		return m.renderRegistry(contentW, height, focusColor)
 	case serviceSecrets:
 		return m.renderSecrets(contentW, height, focusColor)
+	case serviceIAM:
+		return m.renderIAMPreview(contentW, height, focusColor)
 	}
 	return ""
 }

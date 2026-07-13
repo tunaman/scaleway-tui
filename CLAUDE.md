@@ -36,6 +36,7 @@ The codebase is a single Go package (`package main`) split across these files:
 | `cmd_registry.go` | `fetchRegistryImages/Tags`, `deleteRegistryTags` |
 | `cmd_billing.go` | `fetchBillingOverview`, `fetchConsumptionDetail` (aggregates by category+product), `exportBillingCSV` (date-range, project-filtered) |
 | `cmd_secrets.go` | `fetchSecretVersions`, `accessSecretVersion`, `createSecretVersion`, `updateSecretVersionDesc` |
+| `cmd_iam.go` | `fetchIAM` — loads all six IAM lists (users, applications, groups, policies, API keys, logs) org-scoped in one command (paginated; logs capped at `iamLogsCap`) |
 | `view_k8s.go` | `drawK8sBrowser`, `renderK8sPoolPane`, `renderK8sNodePane`, `renderK8sRebootConfirm` |
 | `view_picker.go` | `drawProfilePicker` |
 | `view_dashboard.go` | `drawDashboard`, `renderTopBar/StatusBar/Nav/Content`, `renderBuckets/Clusters/Registry/Secrets/BillingPreview` |
@@ -44,19 +45,22 @@ The codebase is a single Go package (`package main`) split across these files:
 | `view_registry.go` | `drawRegistryBrowser`, `renderRegistryVersionPane`, tag action/delete overlays |
 | `view_secrets.go` | `drawSecretsBrowser`, `renderSecretVersionDetailPane`, `renderSecretContentOverlay` |
 | `view_billing.go` | `drawBilling`, `renderBillingChart/Detail/TopBar/StatusBar`, `renderBillingProjectOverlay`, `renderBillingExportOverlay` |
+| `view_iam.go` | `drawIAMBrowser`, `renderIAMTabStrip`, `iamTabContent` (per-tab columns), `renderIAMPreview` (dashboard pane), `iamResolveName` |
 
 ### Framework & Libraries
 - **Bubbletea** (charmbracelet) — MVU pattern: `Init` / `Update` / `View`
 - **Lipgloss** — terminal styling with the Dracula color palette (defined at top of `main.go`)
 - **Bubbles** — spinner widget
 - **minio-go** — S3-compatible object storage operations
-- **scaleway-sdk-go** — Scaleway APIs (K8s, billing, account, registry, secrets)
+- **scaleway-sdk-go** — Scaleway APIs (K8s, billing, account, registry, secrets, IAM)
 
 ### State Machine
 The entire UI state lives in the `rootModel` struct. Navigation is driven by two sets of `iota` constants:
 
-- `state` constants (`stateProfilePicker`, `stateDashboard`, `stateObjectBrowser`, `stateK8sBrowser`, `stateRegistryBrowser`, `stateSecretsBrowser`, `stateBilling`) — which screen is shown
-- `service` constants (`serviceObjectStorage`, `serviceK8s`, `serviceBilling`, `serviceRegistry`, `serviceSecrets`) — which service the dashboard cursor is on
+- `state` constants (`stateProfilePicker`, `stateDashboard`, `stateObjectBrowser`, `stateK8sBrowser`, `stateRegistryBrowser`, `stateSecretsBrowser`, `stateBilling`, `stateIAMBrowser`) — which screen is shown
+- `service` constants (`serviceObjectStorage`, `serviceK8s`, `serviceBilling`, `serviceRegistry`, `serviceSecrets`, `serviceIAM`) — which service the dashboard cursor is on
+
+The IAM browser (`stateIAMBrowser`) is read-only and organization-scoped. It has six sub-tabs selected by `m.iamTab` (`iamTabUsers` … `iamTabLogs`); `←/→` and `Tab/Shift+Tab` switch tabs, `/` filters the active tab. All six lists are fetched once (cached via `m.iamLoaded`) and everything after is client-side. Principals/bearers/actors are resolved to display names via the `m.iamNames` ID→name map built in the `iamDataMsg` handler.
 
 `View()` dispatches to a `draw*()` function based on the current `state`. `handleKey()` is the central keyboard dispatcher; it delegates to `handleUp()`, `handleDown()`, `handleEnter()`, `handleEsc()` which each contain state-specific logic.
 
@@ -68,6 +72,7 @@ All blocking work (API calls, file uploads) uses `tea.Cmd` closures that return 
 - `k8sNodePoolsMsg` — node pools loaded for a cluster
 - `k8sNodesMsg` — nodes loaded for a pool
 - `k8sNodeRebootedMsg` — node reboot confirmed
+- `iamDataMsg` — all six IAM lists loaded (sets `stateIAMBrowser`, builds the ID→name map)
 - `errMsg` — any async error
 
 Upload progress uses a global `teaProgram` variable to `Send()` messages from a background goroutine via the `progressReader` wrapper type.
@@ -89,6 +94,8 @@ Overlays are rendered conditionally in `View()` on top of the base content using
 
 ### Styling
 All colors are Dracula palette constants defined near the top of `main.go`. Do not introduce new colors without explicit user approval.
+
+**Selected/highlighted list rows must be rendered as plain (uncolored) text.** When a row is wrapped in a `Background(colBg3)` style, any inline ANSI color reset baked into the row string (per-cell `Foreground(...).Render(...)`, `highlightMatch`, etc.) turns the background off partway across, so the highlight stops short of the right edge. Build cursor rows from plain strings so the background spans the full width — either assemble a separate uncolored `plainRowStr` (see `renderClusters`/`renderRegistry` in `view_dashboard.go`) or strip codes from an already-colored row with `stripANSI` (`util.go`, used by `view_iam.go`). Non-selected rows keep their per-column colors.
 
 ### Navigation
 Vim-style throughout: `j`/`k` to move, `/` to filter, `Enter` to select, `Esc` to go back, `q` to quit.
