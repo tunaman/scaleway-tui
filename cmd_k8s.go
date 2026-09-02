@@ -104,10 +104,9 @@ func pollNodesAfterDelay() tea.Cmd {
 func (m rootModel) replaceNode(nodeID, region string) tea.Cmd {
 	return func() tea.Msg {
 		k8sAPI := k8s.NewAPI(m.scwClient)
-		_, err := k8sAPI.DeleteNode(&k8s.DeleteNodeRequest{
-			Region:  scw.Region(region),
-			NodeID:  nodeID,
-			Replace: true,
+		_, err := k8sAPI.ReplaceNode(&k8s.ReplaceNodeRequest{
+			Region: scw.Region(region),
+			NodeID: nodeID,
 		})
 		if err != nil {
 			return errMsg{fmt.Errorf("replace node: %w", err)}
