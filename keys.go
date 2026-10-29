@@ -59,9 +59,9 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				return m, tea.Batch(m.spin.Tick, m.createSecretVersion(m.secBrowserSecret.id, val))
 			case inputModeSecretUpdateDesc:
 				m.input.active = false
-				m.loading = true
 				visible := m.filteredSecretVersions()
 				if len(visible) > 0 && m.secBrowserCursor < len(visible) {
+					m.loading = true
 					rev := visible[m.secBrowserCursor].revision
 					return m, tea.Batch(m.spin.Tick, m.updateSecretVersionDesc(m.secBrowserSecret.id, rev, val))
 				}
@@ -632,7 +632,7 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				if len(m.k8sBrowserNodePools) > 0 && m.k8sBrowserPoolCursor < len(m.k8sBrowserNodePools) {
 					poolID = m.k8sBrowserNodePools[m.k8sBrowserPoolCursor].id
 				}
-				return m, m.fetchNodes(m.k8sBrowserCluster, poolID)
+				return m, tea.Batch(m.spin.Tick, m.fetchNodes(m.k8sBrowserCluster, poolID))
 			}
 			if m.state == stateRegistryBrowser {
 				return m, tea.Batch(m.spin.Tick, m.fetchRegistryImages(m.regBrowserNamespace))
