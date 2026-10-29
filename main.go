@@ -325,6 +325,8 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case errMsg:
 		m.loading = false
+		m.k8sNodesLoading = false // a failed node fetch would otherwise spin forever
+		m.regTagsLoading = false
 		m.upload.active = false // clear progress overlay if upload failed
 		m.err = msg.err
 		return m, nil
@@ -444,6 +446,7 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			msg.nodePoolID != m.k8sBrowserNodePools[m.k8sBrowserPoolCursor].id {
 			return m, nil
 		}
+		m.loading = false // set by F5 refresh
 		m.k8sNodesLoading = false
 		m.k8sBrowserNodes = msg.nodes
 		m.k8sBrowserNodeCursor = 0
