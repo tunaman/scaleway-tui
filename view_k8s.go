@@ -116,6 +116,36 @@ func poolZoneShort(zone string) string {
 	return strings.ToUpper(parts[1]) + "-" + parts[2]
 }
 
+// availabilityColor maps an instance stock level to a palette color.
+func availabilityColor(a string) color.Color {
+	switch a {
+	case "available":
+		return colGreen
+	case "scarce":
+		return colYellow
+	case "shortage":
+		return colRed
+	}
+	return colComment
+}
+
+// stockWarning returns a warning line for the selected pool's node type when
+// it is scarce or out of stock, or "" otherwise. Rebooting or replacing a node
+// may need fresh capacity, which can leave it powered off during a shortage.
+func (m rootModel) stockWarning() string {
+	if m.k8sBrowserPoolCursor >= len(m.k8sBrowserNodePools) {
+		return ""
+	}
+	p := m.k8sBrowserNodePools[m.k8sBrowserPoolCursor]
+	switch p.availability {
+	case "shortage":
+		return fmt.Sprintf("%s is out of stock in %s — the node may fail to come back up.", poolNodeTypeToServerType(p.nodeType), p.zone)
+	case "scarce":
+		return fmt.Sprintf("%s stock is scarce in %s — the node may fail to come back up.", poolNodeTypeToServerType(p.nodeType), p.zone)
+	}
+	return ""
+}
+
 func (m rootModel) renderK8sPoolPane(paneW, paneH int, borderColor color.Color) string {
 	pools := m.k8sBrowserNodePools
 	listH := max(1, paneH-listRowOverhead)
@@ -129,7 +159,8 @@ func (m rootModel) renderK8sPoolPane(paneW, paneH int, borderColor color.Color) 
 	const healW = 5      // "On" / "Off"
 	const zoneW = 6      // "AMS-1" = 5
 	const volumeW = 17   // "Block SSD 186 GB" = 16
-	const fixedW = nodeTypeW + nodesW + rangeW + autoW + healW + zoneW + volumeW + scrollW + prefixW
+	const stockW = 10    // "available" = 9
+	const fixedW = nodeTypeW + nodesW + rangeW + autoW + healW + zoneW + volumeW + stockW + scrollW + prefixW
 	nameW := rowW - fixedW
 	if nameW < 10 {
 		nameW = 10
@@ -154,7 +185,8 @@ func (m rootModel) renderK8sPoolPane(paneW, paneH int, borderColor color.Color) 
 			padRight("AUTO SCALE", autoW) +
 			padRight("HEAL", healW) +
 			padRight("ZONE", zoneW) +
-			padRight("SYSTEM VOLUME", volumeW),
+			padRight("SYSTEM VOLUME", volumeW) +
+			padRight("STOCK", stockW),
 	)
 
 	// onOffPlain returns a plain padded string (no ANSI) — used for the
@@ -171,6 +203,15 @@ func (m rootModel) renderK8sPoolPane(paneW, paneH int, borderColor color.Color) 
 			return lipgloss.NewStyle().Foreground(colGreen).Render(padRight("On", w))
 		}
 		return lipgloss.NewStyle().Foreground(colComment).Render(padRight("Off", w))
+	}
+	stockPlain := func(a string, w int) string {
+		if a == "" {
+			a = "–"
+		}
+		return padRight(a, w)
+	}
+	stockColored := func(a string, w int) string {
+		return lipgloss.NewStyle().Foreground(availabilityColor(a)).Render(stockPlain(a, w))
 	}
 
 	var rows []string
@@ -202,7 +243,7 @@ func (m rootModel) renderK8sPoolPane(paneW, paneH int, borderColor color.Color) 
 		volStr := poolVolumeStr(p.rootVolumeType, p.rootVolumeSize)
 		zoneStr := poolZoneShort(p.zone)
 
-		cols := func(autoFn func(bool, int) string) string {
+		cols := func(autoFn func(bool, int) string, stockFn func(string, int) string) string {
 			return padRight(p.name, nameW) +
 				padRight(p.nodeType, nodeTypeW) +
 				padRight(nodesStr, nodesW) +
@@ -211,15 +252,16 @@ func (m rootModel) renderK8sPoolPane(paneW, paneH int, borderColor color.Color) 
 				autoFn(p.autohealing, healW) +
 				padRight(zoneStr, zoneW) +
 				padRight(volStr, volumeW) +
+				stockFn(p.availability, stockW) +
 				sb
 		}
 
 		if i == m.k8sBrowserPoolCursor {
 			rows = append(rows, lipgloss.NewStyle().
 				Background(colBg3).Foreground(colFg).Bold(true).
-				Width(rowW).Render("▌ "+cols(onOffPlain)))
+				Width(rowW).Render("▌ "+cols(onOffPlain, stockPlain)))
 		} else {
-			rows = append(rows, lipgloss.NewStyle().Foreground(colFg).Width(rowW).Render("  "+cols(onOffColored)))
+			rows = append(rows, lipgloss.NewStyle().Foreground(colFg).Width(rowW).Render("  "+cols(onOffColored, stockColored)))
 		}
 	}
 
@@ -337,6 +379,9 @@ func (m rootModel) renderK8sReplaceConfirm(_ string) string {
 			bg.Foreground(colFg).Render(m.k8sReplaceNodeName),
 	)
 	warn := bg.Foreground(colYellow).Width(innerW).Render("The node will be drained and replaced with a new one.")
+	if sw := m.stockWarning(); sw != "" {
+		warn = lipgloss.JoinVertical(lipgloss.Left, warn, empty, bg.Foreground(availabilityColor(m.k8sBrowserNodePools[m.k8sBrowserPoolCursor].availability)).Bold(true).Width(innerW).Render("⚠ "+sw))
+	}
 
 	divider := bg.Foreground(colBg3).Width(innerW).Render(strings.Repeat("─", innerW))
 	actions := bg.Width(innerW).Render(
@@ -378,6 +423,9 @@ func (m rootModel) renderK8sRebootConfirm(base string) string {
 			bg.Foreground(colFg).Render(m.k8sRebootNodeName),
 	)
 	warn := bg.Foreground(colYellow).Width(innerW).Render("The node will be drained and restarted.")
+	if sw := m.stockWarning(); sw != "" {
+		warn = lipgloss.JoinVertical(lipgloss.Left, warn, empty, bg.Foreground(availabilityColor(m.k8sBrowserNodePools[m.k8sBrowserPoolCursor].availability)).Bold(true).Width(innerW).Render("⚠ "+sw))
+	}
 
 	divider := bg.Foreground(colBg3).Width(innerW).Render(strings.Repeat("─", innerW))
 	actions := bg.Width(innerW).Render(

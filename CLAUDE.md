@@ -32,12 +32,12 @@ The codebase is a single Go package (`package main`) split across these files:
 | `filter.go` | `filteredBuckets/RegistryImages/RegistryTags/RegistryNamespaces/Secrets/SecretVersions`, `maybeCalculateSize` |
 | `util.go` | `panelBox`, `padRight`, `renderVScrollBar`, `formatBytes`, `formatEuroShort`, `parentPrefix`, `prevMonth`, `nextMonth`, `moneyToFloat`, `min`, `max` |
 | `cmd_s3.go` | `fetchData`, `calculateSize`, `fetchBucketContents`, `createBucket/Folder`, `uploadFile`, `deleteEntries`, `progressReader` |
-| `cmd_k8s.go` | `fetchNodePools`, `fetchNodes`, `rebootNode` |
+| `cmd_k8s.go` | `fetchNodePools` (annotates each pool with node-type stock via `fetchServerTypesAvailability`), `fetchNodes`, `rebootNode`, `replaceNode` |
 | `cmd_registry.go` | `fetchRegistryImages/Tags`, `deleteRegistryTags` |
 | `cmd_billing.go` | `fetchBillingOverview`, `fetchConsumptionDetail` (aggregates by category+product), `exportBillingCSV` (date-range, project-filtered) |
 | `cmd_secrets.go` | `fetchSecretVersions`, `accessSecretVersion`, `createSecretVersion`, `updateSecretVersionDesc` |
 | `cmd_iam.go` | `fetchIAM` — loads all six IAM lists (users, applications, groups, policies, API keys, logs) org-scoped in one command (paginated; logs capped at `iamLogsCap`) |
-| `view_k8s.go` | `drawK8sBrowser`, `renderK8sPoolPane`, `renderK8sNodePane`, `renderK8sRebootConfirm` |
+| `view_k8s.go` | `drawK8sBrowser`, `renderK8sPoolPane` (incl. STOCK column), `renderK8sNodePane`, `renderK8sRebootConfirm/ReplaceConfirm` (warn when the pool's node type is scarce or out of stock) |
 | `view_picker.go` | `drawProfilePicker` |
 | `view_dashboard.go` | `drawDashboard`, `renderTopBar/StatusBar/Nav/Content`, `renderBuckets/Clusters/Registry/Secrets/BillingPreview` |
 | `view_input.go` | `renderInputOverlay` — shared input dialog for all input modes |
@@ -52,7 +52,7 @@ The codebase is a single Go package (`package main`) split across these files:
 - **Lipgloss** — terminal styling with the Dracula color palette (defined at top of `main.go`)
 - **Bubbles** — spinner widget
 - **minio-go** — S3-compatible object storage operations
-- **scaleway-sdk-go** — Scaleway APIs (K8s, billing, account, registry, secrets, IAM)
+- **scaleway-sdk-go** — Scaleway APIs (K8s, instance stock, billing, account, registry, secrets, IAM)
 
 ### State Machine
 The entire UI state lives in the `rootModel` struct. Navigation is driven by two sets of `iota` constants:

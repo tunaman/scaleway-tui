@@ -52,6 +52,7 @@ type nodePool struct {
 	zone           string
 	rootVolumeType string
 	rootVolumeSize uint64 // bytes
+	availability   string // instance stock: "available", "scarce", "shortage"; "" if unknown
 }
 
 type k8sNode struct {

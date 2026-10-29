@@ -2,9 +2,11 @@ package main
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/scaleway/scaleway-sdk-go/api/instance/v1"
 	"github.com/scaleway/scaleway-sdk-go/api/k8s/v1"
 	"github.com/scaleway/scaleway-sdk-go/scw"
 )
@@ -49,8 +51,45 @@ func (m rootModel) fetchNodePools(cl cluster) tea.Cmd {
 			page++
 			req.Page = scw.Int32Ptr(page)
 		}
+
+		// Annotate each pool with the stock availability of its node type.
+		// Best effort: a failed lookup leaves availability empty rather than
+		// blocking the pool list.
+		byZone := map[string]map[string]string{}
+		for i := range pools {
+			zone := pools[i].zone
+			if _, ok := byZone[zone]; !ok {
+				byZone[zone] = fetchServerTypesAvailability(m.scwClient, zone)
+			}
+			pools[i].availability = byZone[zone][poolNodeTypeToServerType(pools[i].nodeType)]
+		}
 		return k8sNodePoolsMsg{cluster: cl, nodePools: pools}
 	}
+}
+
+// fetchServerTypesAvailability returns server type → availability for a zone,
+// or nil if the lookup fails.
+func fetchServerTypesAvailability(client *scw.Client, zone string) map[string]string {
+	instanceAPI := instance.NewAPI(client)
+	resp, err := instanceAPI.GetServerTypesAvailability(&instance.GetServerTypesAvailabilityRequest{
+		Zone: scw.Zone(zone),
+	}, scw.WithAllPages())
+	if err != nil {
+		return nil
+	}
+	out := make(map[string]string, len(resp.Servers))
+	for name, a := range resp.Servers {
+		if a != nil {
+			out[name] = string(a.Availability)
+		}
+	}
+	return out
+}
+
+// poolNodeTypeToServerType maps a K8s node type ("pop2_8c_32g") to the
+// Instance server type name ("POP2-8C-32G").
+func poolNodeTypeToServerType(nodeType string) string {
+	return strings.ToUpper(strings.ReplaceAll(nodeType, "_", "-"))
 }
 
 // fetchNodes fetches all nodes for the given cluster, optionally filtered by poolID.
