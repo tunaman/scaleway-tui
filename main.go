@@ -438,6 +438,12 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case k8sNodesMsg:
+		// Drop responses for a pool the cursor has already moved away from;
+		// fetches race when scrolling quickly through pools.
+		if m.k8sBrowserPoolCursor < len(m.k8sBrowserNodePools) &&
+			msg.nodePoolID != m.k8sBrowserNodePools[m.k8sBrowserPoolCursor].id {
+			return m, nil
+		}
 		m.k8sNodesLoading = false
 		m.k8sBrowserNodes = msg.nodes
 		m.k8sBrowserNodeCursor = 0
