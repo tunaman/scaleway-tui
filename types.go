@@ -62,6 +62,36 @@ type k8sNode struct {
 	publicIPv4 string
 }
 
+// instanceServer is one row in the Instances list (a Scaleway Instance / VM).
+type instanceServer struct {
+	id             string
+	name           string
+	status         string // "running", "stopped", "stopped in place", "starting", "stopping", "locked"
+	commercialType string // e.g. "GP1-M"
+	zone           string // e.g. "fr-par-1"
+	publicIP       string
+	privateIP      string
+	protected      bool
+	tags           []string
+	created        time.Time
+	volumes        []instanceVolume
+}
+
+type instanceVolume struct {
+	name    string // map key from the API ("0", "1", ...)
+	size    uint64 // bytes
+	volType string // "l_ssd", "b_ssd", ...
+	boot    bool
+}
+
+// instConfirmAction is which server power action is awaiting confirmation.
+const (
+	instActionNone = iota
+	instActionPowerOn
+	instActionPowerOff
+	instActionReboot
+)
+
 type registryNamespace struct {
 	id         string
 	name       string
@@ -190,6 +220,7 @@ type dataMsg struct {
 	projects           []projectItem
 	registryNamespaces []registryNamespace
 	secrets            []secretItem
+	servers            []instanceServer
 }
 
 type sizeMsg struct {
@@ -291,6 +322,19 @@ type k8sNodesMsg struct {
 type k8sNodeRebootedMsg struct{}
 type k8sNodeReplacedMsg struct{}
 type k8sNodePollTickMsg struct{}
+
+// serversMsg carries the Instances list (all zones of the active region).
+type serversMsg struct {
+	servers []instanceServer
+}
+
+// serverActionDoneMsg is sent after a successful power action; triggers a
+// refetch so the new state (starting/stopping/...) is shown.
+type serverActionDoneMsg struct{}
+
+// serverPollTickMsg fires every few seconds while any server is in a
+// transient state, mirroring the K8s node polling.
+type serverPollTickMsg struct{}
 
 type errMsg struct{ err error }
 

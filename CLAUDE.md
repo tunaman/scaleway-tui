@@ -17,7 +17,7 @@ golangci-lint run
 ./bin/scw-tui
 ```
 
-There are no automated tests in this project.
+There are render tests in `view_instance_test.go` (`go test .`); no other test coverage.
 
 ## Architecture
 
@@ -32,6 +32,7 @@ The codebase is a single Go package (`package main`) split across these files:
 | `filter.go` | `filteredBuckets/RegistryImages/RegistryTags/RegistryNamespaces/Secrets/SecretVersions`, `maybeCalculateSize` |
 | `util.go` | `panelBox`, `padRight`, `renderVScrollBar`, `formatBytes`, `formatEuroShort`, `parentPrefix`, `prevMonth`, `nextMonth`, `moneyToFloat`, `min`, `max` |
 | `cmd_s3.go` | `fetchData`, `calculateSize`, `fetchBucketContents`, `createBucket/Folder`, `uploadFile`, `deleteEntries`, `progressReader` |
+| `cmd_instance.go` | `listServersAllZones` (all zones × all states of the region), `serverFromSDK`, `fetchServers`, `powerServer`, `pollServersAfterDelay`, `regionZones` |
 | `cmd_k8s.go` | `fetchNodePools` (annotates each pool with node-type stock via `fetchServerTypesAvailability`), `fetchNodes`, `rebootNode`, `replaceNode` |
 | `cmd_registry.go` | `fetchRegistryImages/Tags`, `deleteRegistryTags` |
 | `cmd_billing.go` | `fetchBillingOverview`, `fetchConsumptionDetail` (aggregates by category+product), `exportBillingCSV` (date-range, project-filtered) |
@@ -39,7 +40,7 @@ The codebase is a single Go package (`package main`) split across these files:
 | `cmd_iam.go` | `fetchIAM` — loads all six IAM lists (users, applications, groups, policies, API keys, logs) org-scoped in one command (paginated; logs capped at `iamLogsCap`) |
 | `view_k8s.go` | `drawK8sBrowser`, `renderK8sPoolPane` (incl. STOCK column), `renderK8sNodePane`, `renderK8sRebootConfirm/ReplaceConfirm` (warn when the pool's node type is scarce or out of stock) |
 | `view_picker.go` | `drawProfilePicker` |
-| `view_dashboard.go` | `drawDashboard`, `renderTopBar/StatusBar/Nav/Content`, `renderBuckets/Clusters/Registry/Secrets/BillingPreview` |
+| `view_dashboard.go` | `drawDashboard`, `renderTopBar/StatusBar/Nav/Content`, `renderServers/ServerDetail` (Instances, incl. power-action confirm dialog), `renderBuckets/Clusters/Registry/Secrets/BillingPreview` |
 | `view_input.go` | `renderInputOverlay` — shared input dialog for all input modes |
 | `view_s3.go` | `drawObjectBrowser`, browser render helpers, `renderConfirmDialog/UploadProgress` |
 | `view_registry.go` | `drawRegistryBrowser`, `renderRegistryVersionPane`, tag action/delete overlays |
@@ -58,9 +59,11 @@ The codebase is a single Go package (`package main`) split across these files:
 The entire UI state lives in the `rootModel` struct. Navigation is driven by two sets of `iota` constants:
 
 - `state` constants (`stateProfilePicker`, `stateDashboard`, `stateObjectBrowser`, `stateK8sBrowser`, `stateRegistryBrowser`, `stateSecretsBrowser`, `stateBilling`, `stateIAMBrowser`) — which screen is shown
-- `service` constants (`serviceObjectStorage`, `serviceK8s`, `serviceBilling`, `serviceRegistry`, `serviceSecrets`, `serviceIAM`) — which service the dashboard cursor is on
+- `service` constants (`serviceInstance`, `serviceObjectStorage`, `serviceK8s`, `serviceBilling`, `serviceRegistry`, `serviceSecrets`, `serviceIAM`) — which service the dashboard cursor is on
 
 The IAM browser (`stateIAMBrowser`) is read-only and organization-scoped. It has six sub-tabs selected by `m.iamTab` (`iamTabUsers` … `iamTabLogs`); `←/→` and `Tab/Shift+Tab` switch tabs, `/` filters the active tab. All six lists are fetched once (cached via `m.iamLoaded`) and everything after is client-side. Principals/bearers/actors are resolved to display names via the `m.iamNames` ID→name map built in the `iamDataMsg` handler.
+
+The Instances service (`serviceInstance`) is a dashboard-level view only — no dedicated `state` constant. It renders a server list + SERVER INFO detail pane (`renderServers`) with power actions (`O`/`S`/`R`) that set `m.instConfirmAction` and show a confirm dialog; after a successful action the list refetches and polls every 3s while any server is `starting`/`stopping` (`serverPollTickMsg`).
 
 `View()` dispatches to a `draw*()` function based on the current `state`. `handleKey()` is the central keyboard dispatcher; it delegates to `handleUp()`, `handleDown()`, `handleEnter()`, `handleEsc()` which each contain state-specific logic.
 
@@ -72,6 +75,9 @@ All blocking work (API calls, file uploads) uses `tea.Cmd` closures that return 
 - `k8sNodePoolsMsg` — node pools loaded for a cluster
 - `k8sNodesMsg` — nodes loaded for a pool
 - `k8sNodeRebootedMsg` — node reboot confirmed
+- `serversMsg` — Instances list loaded (all zones × states of the active region)
+- `serverActionDoneMsg` — power action accepted; triggers `fetchServers()`
+- `serverPollTickMsg` — periodic refresh while a server is starting/stopping
 - `iamDataMsg` — all six IAM lists loaded (sets `stateIAMBrowser`, builds the ID→name map)
 - `errMsg` — any async error
 
@@ -86,6 +92,7 @@ Overlays are rendered conditionally in `View()` on top of the base content using
 - `m.regConfirmDeleteTags` — registry tag delete confirmation (`view_registry.go`)
 - `m.secShowContent` — secrets version content viewer (`view_secrets.go`)
 - `m.k8sConfirmReboot` — node reboot confirmation dialog (`view_k8s.go`); `R` key
+- `m.instConfirmAction != instActionNone` — server power-action confirmation dialog (`view_dashboard.go`); `O`/`S`/`R` keys
 - `m.billingProjectOverlay` — billing project picker (`view_billing.go`); `p/P` key
 - `m.billingExportOverlay` — billing CSV export date-range picker (`view_billing.go`); `e/E` key
 

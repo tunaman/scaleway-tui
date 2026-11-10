@@ -15,6 +15,7 @@ A keyboard-driven terminal UI for managing your [Scaleway](https://www.scaleway.
 ## Features
 
 - **Multi-profile support** — pick any profile from your existing `~/.config/scw/config.yaml`
+- **Instances browser** — list all servers across every zone of the region with type, IP, and state; power on, power off, and reboot (with confirmation); detail pane with volumes, tags, and IPs
 - **Object Storage browser** — navigate buckets and folders, view object sizes, upload, create folders/buckets, and delete objects
 - **Kubernetes cluster browser** — list Kapsule clusters, browse node pools (autoscaling, node type, zone, volume), view nodes with status, and reboot nodes
 - **Container Registry browser** — browse namespaces, images, and tags; copy pull commands
@@ -70,6 +71,18 @@ On first launch you will be presented with a profile picker. Select a profile an
 | `F5` | Refresh |
 | `Esc` | Back / cancel / clear filter |
 | `q` | Quit |
+
+#### Instances
+
+| Key | Action |
+| ----- | -------- |
+| `j` / `k` | Navigate servers |
+| `/` | Filter (name, IP, zone, type, state) |
+| `O` | Power on (with confirmation) |
+| `S` | Power off (with confirmation) |
+| `R` | Reboot (with confirmation) |
+| `F5` | Refresh |
+| `Esc` | Back / clear filter |
 
 #### Object Storage
 

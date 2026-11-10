@@ -95,6 +95,8 @@ func poolVolumeStr(volType string, volBytes uint64) string {
 		typePart = "SBS-5K"
 	case "sbs_15k", "sbs-15k":
 		typePart = "SBS-15K"
+	case "sbs_volume":
+		typePart = "SBS"
 	case "default_volume_type", "":
 		typePart = "Block SSD"
 	default:
