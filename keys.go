@@ -502,6 +502,41 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// ── Instances filter mode ──
+	if m.instFiltering {
+		switch msg.String() {
+		case "esc":
+			m.instFiltering = false
+			m.instFilter = ""
+			m.instCursor = 0
+			m.instScrollY = 0
+		case "enter":
+			m.instFiltering = false
+			m.instCursor = 0
+			m.instScrollY = 0
+		case "backspace", "ctrl+h":
+			if len([]rune(m.instFilter)) > 0 {
+				runes := []rune(m.instFilter)
+				m.instFilter = string(runes[:len(runes)-1])
+			} else {
+				m.instFiltering = false
+			}
+			m.instCursor = 0
+			m.instScrollY = 0
+		case "up":
+			return m.handleUp()
+		case "down":
+			return m.handleDown()
+		default:
+			if msg.Text != "" {
+				m.instFilter += msg.Text
+				m.instCursor = 0
+				m.instScrollY = 0
+			}
+		}
+		return m, nil
+	}
+
 	// ── Secret delete confirm ──
 	if m.secConfirmDelete {
 		switch msg.String() {
@@ -524,11 +559,15 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	switch msg.String() {
 	case "ctrl+c", "q":
-		if m.showConfirm || m.input.active || m.secShowContent {
+		if m.showConfirm || m.input.active || m.secShowContent || m.instConfirmAction != instActionNone {
 			// Dismiss overlays rather than quitting.
 			m.showConfirm = false
 			m.input.active = false
 			m.secShowContent = false
+			m.instConfirmAction = instActionNone
+			m.instConfirmServerID = ""
+			m.instConfirmServerName = ""
+			m.instConfirmServerZone = ""
 			return m, nil
 		}
 		return m, tea.Quit
@@ -616,6 +655,21 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.iamScrollY = 0
 			return m, nil
 		}
+		// Dismiss server power-action confirm.
+		if m.instConfirmAction != instActionNone {
+			m.instConfirmAction = instActionNone
+			m.instConfirmServerID = ""
+			m.instConfirmServerName = ""
+			m.instConfirmServerZone = ""
+			return m, nil
+		}
+		// Clear instances filter if active.
+		if m.instFilter != "" {
+			m.instFilter = ""
+			m.instCursor = 0
+			m.instScrollY = 0
+			return m, nil
+		}
 		return m.handleEsc()
 	case "f5":
 		if !m.loading {
@@ -643,6 +697,9 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			if m.state == stateIAMBrowser {
 				return m, tea.Batch(m.spin.Tick, m.fetchIAM())
 			}
+			if m.state == stateDashboard && m.activeService == serviceInstance {
+				return m, tea.Batch(m.spin.Tick, m.fetchServers())
+			}
 			return m, tea.Batch(m.spin.Tick, m.fetchData())
 		}
 	case "e", "E":
@@ -658,6 +715,12 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.billingProjectCursor = m.billingProjectIdx
 		}
 	case "/":
+		if m.state == stateDashboard && m.focus == focusContent && m.activeService == serviceInstance {
+			m.instFiltering = true
+			m.instFilter = ""
+			m.instCursor = 0
+			m.instScrollY = 0
+		}
 		if m.state == stateDashboard && m.focus == focusContent && m.activeService == serviceObjectStorage {
 			m.bucketFiltering = true
 			m.bucketFilter = ""
@@ -729,7 +792,25 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.loading = true
 			return m, tea.Batch(m.spin.Tick, m.replaceNode(m.k8sReplaceNodeID, m.k8sBrowserCluster.region))
 		}
+		if m.state == stateDashboard && m.activeService == serviceInstance && m.instConfirmAction != instActionNone {
+			action := instanceActionAPI[m.instConfirmAction]
+			id := m.instConfirmServerID
+			zone := m.instConfirmServerZone
+			m.instConfirmAction = instActionNone
+			m.instConfirmServerID = ""
+			m.instConfirmServerName = ""
+			m.instConfirmServerZone = ""
+			m.loading = true
+			return m, tea.Batch(m.spin.Tick, m.powerServer(id, zone, action))
+		}
 	case "n", "N":
+		if m.instConfirmAction != instActionNone {
+			m.instConfirmAction = instActionNone
+			m.instConfirmServerID = ""
+			m.instConfirmServerName = ""
+			m.instConfirmServerZone = ""
+			return m, nil
+		}
 		if m.showConfirm {
 			m.showConfirm = false
 			m.confirmItems = nil
@@ -844,6 +925,32 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				m.k8sRebootNodeID = n.id
 				m.k8sRebootNodeName = n.name
 				m.k8sConfirmReboot = true
+			}
+		}
+		if m.state == stateDashboard && m.activeService == serviceInstance && !m.loading && m.instConfirmAction == instActionNone {
+			if s := m.selectedServer(); s != nil {
+				m.instConfirmAction = instActionReboot
+				m.instConfirmServerID = s.id
+				m.instConfirmServerName = s.name
+				m.instConfirmServerZone = s.zone
+			}
+		}
+	case "o", "O":
+		if m.state == stateDashboard && m.activeService == serviceInstance && !m.loading && m.instConfirmAction == instActionNone {
+			if s := m.selectedServer(); s != nil {
+				m.instConfirmAction = instActionPowerOn
+				m.instConfirmServerID = s.id
+				m.instConfirmServerName = s.name
+				m.instConfirmServerZone = s.zone
+			}
+		}
+	case "s", "S":
+		if m.state == stateDashboard && m.activeService == serviceInstance && !m.loading && m.instConfirmAction == instActionNone {
+			if s := m.selectedServer(); s != nil {
+				m.instConfirmAction = instActionPowerOff
+				m.instConfirmServerID = s.id
+				m.instConfirmServerName = s.name
+				m.instConfirmServerZone = s.zone
 			}
 		}
 	case "x", "X":
@@ -1177,6 +1284,15 @@ func (m rootModel) handleUp() (rootModel, tea.Cmd) {
 		}
 
 	case m.state == stateDashboard && m.focus == focusContent:
+		if m.activeService == serviceInstance {
+			fs := m.filteredServers()
+			if len(fs) > 0 && m.instCursor > 0 {
+				m.instCursor--
+				if m.instCursor < m.instScrollY {
+					m.instScrollY = m.instCursor
+				}
+			}
+		}
 		fb := m.filteredBuckets()
 		if m.activeService == serviceObjectStorage && len(fb) > 0 {
 			if m.bucketCursor > 0 {
@@ -1285,6 +1401,12 @@ func (m rootModel) handleDown() (rootModel, tea.Cmd) {
 		}
 
 	case m.state == stateDashboard && m.focus == focusContent:
+		if m.activeService == serviceInstance {
+			fs := m.filteredServers()
+			if len(fs) > 0 && m.instCursor < len(fs)-1 {
+				m.instCursor++
+			}
+		}
 		fb := m.filteredBuckets()
 		if m.activeService == serviceObjectStorage && len(fb) > 0 {
 			if m.bucketCursor < len(fb)-1 {

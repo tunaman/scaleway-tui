@@ -71,6 +71,35 @@ func (m rootModel) filteredBuckets() []bucket {
 	return out
 }
 
+func (m rootModel) filteredServers() []instanceServer {
+	if m.instFilter == "" {
+		return m.servers
+	}
+	needle := strings.ToLower(m.instFilter)
+	var out []instanceServer
+	for _, s := range m.servers {
+		if strings.Contains(strings.ToLower(s.name), needle) ||
+			strings.Contains(strings.ToLower(s.publicIP), needle) ||
+			strings.Contains(strings.ToLower(s.privateIP), needle) ||
+			strings.Contains(strings.ToLower(s.zone), needle) ||
+			strings.Contains(strings.ToLower(s.commercialType), needle) ||
+			strings.Contains(strings.ToLower(s.status), needle) {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// selectedServer returns the server under the cursor, or nil when the list is
+// empty or the cursor is out of range.
+func (m rootModel) selectedServer() *instanceServer {
+	visible := m.filteredServers()
+	if len(visible) == 0 || m.instCursor >= len(visible) {
+		return nil
+	}
+	return &visible[m.instCursor]
+}
+
 func (m rootModel) filteredSecrets() []secretItem {
 	if m.secretFilter == "" {
 		return m.secrets

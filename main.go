@@ -39,7 +39,8 @@ const (
 )
 
 const (
-	serviceObjectStorage = iota
+	serviceInstance = iota
+	serviceObjectStorage
 	serviceK8s
 	serviceBilling
 	serviceRegistry
@@ -150,6 +151,17 @@ type rootModel struct {
 	clusters           []cluster
 	projects           []projectItem
 	registryNamespaces []registryNamespace
+	servers            []instanceServer
+
+	// Instances (dashboard) state
+	instCursor         int
+	instScrollY        int
+	instFilter         string
+	instFiltering      bool
+	instConfirmAction  int // instActionNone / PowerOn / PowerOff / Reboot
+	instConfirmServerID   string
+	instConfirmServerName string
+	instConfirmServerZone string
 
 	// Registry state
 	registryCursor    int
@@ -485,6 +497,26 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case serversMsg:
+		m.servers = msg.servers
+		m.loading = false
+		// Keep polling while any server is transitioning (starting/stopping).
+		if m.state == stateDashboard && m.activeService == serviceInstance && hasTransientServer(m.servers) {
+			return m, pollServersAfterDelay()
+		}
+		return m, nil
+
+	case serverPollTickMsg:
+		// Only poll while the Instances list is on screen.
+		if m.state == stateDashboard && m.activeService == serviceInstance {
+			return m, m.fetchServers()
+		}
+		return m, nil
+
+	case serverActionDoneMsg:
+		m.loading = true
+		return m, tea.Batch(m.spin.Tick, m.fetchServers())
+
 	case secretVersionsMsg:
 		m.loading = false
 		m.secBrowserSecret = msg.secret
@@ -565,6 +597,7 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.projects = msg.projects
 		m.registryNamespaces = msg.registryNamespaces
 		m.secrets = msg.secrets
+		m.servers = msg.servers
 		m.bucketCursor = 0
 		m.bucketScrollY = 0
 		m.bucketScrollX = 0
@@ -573,6 +606,8 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.registryScrollY = 0
 		m.secretCursor = 0
 		m.secretScrollY = 0
+		m.instCursor = 0
+		m.instScrollY = 0
 		m.prevBucketSel = -1
 		// Update the display name now that we've resolved it.
 		for _, p := range msg.projects {
@@ -655,6 +690,10 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.iamFilter += msg.Content
 			m.iamCursor = 0
 			m.iamScrollY = 0
+		} else if m.instFiltering {
+			m.instFilter += msg.Content
+			m.instCursor = 0
+			m.instScrollY = 0
 		}
 		return m, nil
 

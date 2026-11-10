@@ -54,6 +54,9 @@ func (m rootModel) drawDashboard() string {
 	if m.input.active {
 		return m.renderInputOverlay(base)
 	}
+	if m.instConfirmAction != instActionNone {
+		return m.renderServerActionConfirm(base)
+	}
 	if m.secConfirmDelete {
 		return m.renderSecretDeleteConfirm(base)
 	}
@@ -85,7 +88,7 @@ func (m rootModel) renderTopBar() string {
 	// ── Left: breadcrumb ──
 	crumbs := []string{pill(m.project, colGreen)}
 
-	serviceNames := []string{"Object Storage", "K8s Clusters", "Billing", "Container Registry", "Secrets Manager", "IAM"}
+	serviceNames := []string{"Instances", "Object Storage", "K8s Clusters", "Billing", "Container Registry", "Secrets Manager", "IAM"}
 	switch m.state {
 	case stateObjectBrowser:
 		crumbs = append(crumbs, sep, pill("Object Storage", colBlue))
@@ -147,6 +150,9 @@ func (m rootModel) renderTopBar() string {
 	case stateIAMBrowser:
 		rightInfo = comment(fmt.Sprintf("%d items  ", m.iamVisibleCount()))
 	}
+	if m.state == stateDashboard && m.activeService == serviceInstance {
+		rightInfo = comment(fmt.Sprintf("%d servers  ", len(m.servers)))
+	}
 	clock := lipgloss.NewStyle().Foreground(colComment).Render(" " + time.Now().Format("15:04") + " ")
 	rightPart := rightInfo + clock
 
@@ -172,6 +178,17 @@ func (m rootModel) renderStatusBar() string {
 	}
 	var keys string
 	switch {
+	case m.activeService == serviceInstance && m.state == stateDashboard:
+		keys = lipgloss.JoinHorizontal(lipgloss.Top,
+			hotkey("↑↓", "Navigate"),
+			hotkey("Tab", "Focus"),
+			hotkey("/", "Filter"),
+			hotkey("O", "Power on"),
+			hotkey("S", "Power off"),
+			hotkey("R", "Reboot"),
+			hotkey("F5", "Refresh"),
+			hotkey("Q", "Quit"),
+		)
 	case m.activeService == serviceBilling:
 		keys = lipgloss.JoinHorizontal(lipgloss.Top,
 			hotkey("←→", "Month"),
@@ -232,6 +249,7 @@ func (m rootModel) renderStatusBar() string {
 
 func (m rootModel) renderNav(height int) string {
 	services := []struct{ label string }{
+		{"Instances"},
 		{"Object Storage"},
 		{"K8s Clusters"},
 		{"Billing"},
@@ -275,6 +293,8 @@ func (m rootModel) renderContent(height int) string {
 		focusColor = colBlue
 	}
 	switch m.activeService {
+	case serviceInstance:
+		return m.renderServers(contentW, height, focusColor)
 	case serviceObjectStorage:
 		return m.renderBuckets(contentW, height, focusColor)
 	case serviceK8s:
@@ -457,6 +477,259 @@ func (m rootModel) renderBucketDetail() string {
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, lines...)
+}
+
+// ─────────────────────────────────────────────
+// Instances view
+// ─────────────────────────────────────────────
+
+// serverStatusColor maps a server state to a palette color.
+func serverStatusColor(status string) color.Color {
+	switch status {
+	case "running":
+		return colGreen
+	case "starting", "stopping", "stopped", "stopped in place":
+		return colYellow
+	case "locked":
+		return colRed
+	}
+	return colComment
+}
+
+// serverStatusShort shortens a state for the list column; the detail pane
+// shows the exact state.
+func serverStatusShort(status string) string {
+	if status == "stopped in place" {
+		return "stopped"
+	}
+	return status
+}
+
+func (m rootModel) renderServers(totalW, height int, borderColor color.Color) string {
+	listW := totalW - detailPaneWidth - 1
+	const scrollW = 1
+	const prefixW = 2
+	const typeW = 9
+	const ipW = 15
+	const stateW = 10
+	nameW := listW - 2 - prefixW - typeW - ipW - stateW - scrollW
+	if nameW < 10 {
+		nameW = 10
+	}
+
+	visible := m.filteredServers()
+	listH := max(1, height-listRowOverhead)
+
+	// ── Scroll viewport ──
+	scrollY := m.instScrollY
+	if m.instCursor >= scrollY+listH {
+		scrollY = m.instCursor - listH + 1
+	}
+	if m.instCursor < scrollY {
+		scrollY = m.instCursor
+	}
+	scrollY = max(0, scrollY)
+
+	// ── Scrollbar column ──
+	vScrollBar := renderVScrollBar(len(visible), scrollY, listH)
+
+	// ── Build visible rows ──
+	var rows []string
+	if len(visible) == 0 {
+		msg := "  No servers found in this project."
+		if m.instFilter != "" {
+			msg = "  No servers match \"" + m.instFilter + "\"."
+		}
+		for si := 0; si < listH; si++ {
+			sb := ""
+			if si < len(vScrollBar) {
+				sb = vScrollBar[si]
+			}
+			if si == 0 {
+				rows = append(rows, lipgloss.NewStyle().Faint(true).Width(listW-2-scrollW).Render(msg)+sb)
+			} else {
+				rows = append(rows, strings.Repeat(" ", listW-2-scrollW)+sb)
+			}
+		}
+	}
+
+	end := min(scrollY+listH, len(visible))
+	for i := scrollY; i < end; i++ {
+		s := visible[i]
+		sb := ""
+		if i-scrollY < len(vScrollBar) {
+			sb = vScrollBar[i-scrollY]
+		}
+
+		ipStr := s.publicIP
+		if ipStr == "" {
+			ipStr = "—"
+		}
+		stateStr := serverStatusShort(s.status)
+		stateColored := lipgloss.NewStyle().Foreground(serverStatusColor(s.status)).Render(padRight(stateStr, stateW))
+
+		cols := padRight(s.name, nameW) +
+			padRight(s.commercialType, typeW) +
+			padRight(ipStr, ipW)
+		if i == m.instCursor {
+			plainCols := padRight(s.name, nameW) +
+				padRight(s.commercialType, typeW) +
+				padRight(ipStr, ipW) +
+				padRight(stateStr, stateW)
+			rows = append(rows, lipgloss.NewStyle().
+				Background(colBg3).Foreground(colFg).Bold(true).
+				Width(listW - 2).Render("▌ "+plainCols+sb))
+		} else {
+			rows = append(rows, lipgloss.NewStyle().Foreground(colFg).Width(listW - 2).Render("  "+cols+stateColored+sb))
+		}
+	}
+
+	// ── Header / filter bar ──
+	var header string
+	switch {
+	case m.instFiltering:
+		header = lipgloss.NewStyle().Foreground(colComment).Render("/") +
+			lipgloss.NewStyle().Foreground(colFg).Render(m.instFilter) +
+			lipgloss.NewStyle().Foreground(colGreen).Render("▌")
+	case m.instFilter != "":
+		header = lipgloss.NewStyle().Foreground(colYellow).Render("/ "+m.instFilter) +
+			lipgloss.NewStyle().Foreground(colComment).Faint(true).Render("  Esc to clear")
+	default:
+		header = "  " + lipgloss.NewStyle().Foreground(colComment).Bold(true).Render(
+			padRight("NAME", nameW)+padRight("TYPE", typeW)+padRight("IP", ipW)+padRight("STATE", stateW),
+		)
+	}
+
+	panelTitle := "INSTANCES"
+	if m.instFilter != "" {
+		panelTitle = fmt.Sprintf("INSTANCES  %d/%d", len(visible), len(m.servers))
+	}
+
+	listContent := lipgloss.JoinVertical(lipgloss.Left,
+		header,
+		strings.Repeat("─", listW-2),
+		lipgloss.JoinVertical(lipgloss.Left, rows...),
+	)
+	listPane := panelBox(panelTitle, listW, height, borderColor, listContent)
+	detailPane := panelBox("SERVER INFO", detailPaneWidth, height, colPurple, m.renderServerDetail())
+	return lipgloss.JoinHorizontal(lipgloss.Top, listPane, detailPane)
+}
+
+func (m rootModel) renderServerDetail() string {
+	fb := m.filteredServers()
+	if len(fb) == 0 || m.instCursor >= len(fb) {
+		return lipgloss.NewStyle().Faint(true).Render("Select a server")
+	}
+	s := fb[m.instCursor]
+
+	innerW := detailPaneWidth - 4
+	nameDisplay := s.name
+	if lipgloss.Width(nameDisplay) > innerW {
+		nameDisplay = string([]rune(nameDisplay)[:innerW-1]) + "…"
+	}
+
+	key := func(key, val string, valColor color.Color) string {
+		k := lipgloss.NewStyle().Foreground(colComment).Render(" " + padRight(key, 10))
+		v := lipgloss.NewStyle().Foreground(valColor).Render(" " + val)
+		return k + v
+	}
+	dash := lipgloss.NewStyle().Faint(true).Render(" —")
+
+	lines := []string{
+		lipgloss.NewStyle().Foreground(colBlue).Bold(true).Render(" " + nameDisplay + " "),
+		"",
+		key("Zone", s.zone, colBlue),
+		key("Type", s.commercialType, colFg),
+		key("State", s.status, serverStatusColor(s.status)),
+	}
+	if s.publicIP != "" {
+		lines = append(lines, key("Public IP", s.publicIP, colGreen))
+	} else {
+		lines = append(lines, " "+lipgloss.NewStyle().Foreground(colComment).Render(padRight("Public IP", 10))+dash)
+	}
+	if s.privateIP != "" {
+		lines = append(lines, key("Private IP", s.privateIP, colFg))
+	} else {
+		lines = append(lines, " "+lipgloss.NewStyle().Foreground(colComment).Render(padRight("Private IP", 10))+dash)
+	}
+	if len(s.tags) > 0 {
+		lines = append(lines, key("Tags", strings.Join(s.tags, ", "), colPurple))
+	}
+	lines = append(lines,
+		key("Created", fmtDate(s.created), colFg),
+	)
+	if s.protected {
+		lines = append(lines, key("Protected", "yes", colYellow))
+	}
+	lines = append(lines, "")
+	lines = append(lines, lipgloss.NewStyle().Foreground(colComment).Bold(true).Render(" Volumes:"))
+	if len(s.volumes) == 0 {
+		lines = append(lines, lipgloss.NewStyle().Faint(true).Render("  —"))
+	}
+	for _, v := range s.volumes {
+		boot := ""
+		if v.boot {
+			boot = "  (boot)"
+		}
+		lines = append(lines, "  "+
+			lipgloss.NewStyle().Foreground(colComment).Render(padRight(v.name, 2))+
+			lipgloss.NewStyle().Foreground(colFg).Render(poolVolumeStr(v.volType, v.size))+boot)
+	}
+
+	return lipgloss.JoinVertical(lipgloss.Left, lines...)
+}
+
+// renderServerActionConfirm shows a centered confirmation dialog for a server
+// power action (power on / power off / reboot).
+func (m rootModel) renderServerActionConfirm(base string) string {
+	var title, warn string
+	var accent color.Color
+	switch m.instConfirmAction {
+	case instActionPowerOn:
+		title, warn, accent = "Power On?", "The server will be started.", colGreen
+	case instActionPowerOff:
+		title, warn, accent = "Power Off?", "The server will be shut down. Running processes will be terminated.", colRed
+	default:
+		title, warn, accent = "Reboot?", "The server will be restarted.", colYellow
+	}
+
+	dialogW := min(m.width-8, 60)
+	innerW := dialogW - 6
+	bg := lipgloss.NewStyle().Background(colBg2)
+
+	heading := bg.Foreground(accent).Bold(true).Width(innerW).Render(title)
+	empty := bg.Width(innerW).Render("")
+	serverLine := bg.Width(innerW).Render(
+		bg.Foreground(colComment).Render("Server:  ") +
+			bg.Foreground(colFg).Render(m.instConfirmServerName),
+	)
+	warnLine := bg.Foreground(colYellow).Width(innerW).Render(warn)
+
+	divider := bg.Foreground(colBg3).Width(innerW).Render(strings.Repeat("─", innerW))
+	actions := bg.Width(innerW).Render(
+		lipgloss.JoinHorizontal(lipgloss.Top,
+			lipgloss.NewStyle().Background(accent).Foreground(colBg).Bold(true).Padding(0, 2).Render("Y  Confirm"),
+			lipgloss.NewStyle().Background(colBg3).Foreground(colFg).Padding(0, 2).Render("Esc  Cancel"),
+		),
+	)
+
+	body := bg.Width(innerW).Render(
+		lipgloss.JoinVertical(lipgloss.Left,
+			heading, empty, serverLine, empty, warnLine, empty, divider, empty, actions,
+		),
+	)
+	dialog := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(accent).
+		Background(colBg2).
+		Padding(1, 2).
+		Width(dialogW).
+		Render(body)
+
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, dialog,
+		lipgloss.WithWhitespaceChars(" "),
+		lipgloss.WithWhitespaceStyle(lipgloss.NewStyle().Foreground(colBg)),
+	)
 }
 
 // ─────────────────────────────────────────────

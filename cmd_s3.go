@@ -27,6 +27,7 @@ func (m rootModel) fetchData() tea.Cmd {
 		var clusters []cluster
 		var projects []projectItem
 		var registryNamespaces []registryNamespace
+		var servers []instanceServer
 
 		// ── Projects ──
 		// Try ListProjects first (requires org ID + permissions). Falls back to
@@ -104,6 +105,13 @@ func (m rootModel) fetchData() tea.Cmd {
 			}
 			clPage++
 			kReq.Page = scw.Int32Ptr(clPage)
+		}
+
+		// ── Servers (Instances) ──
+		// Non-fatal: an account without Instance access still gets the rest
+		// of the dashboard.
+		if srvs, err := m.listServersAllZones(); err == nil {
+			servers = srvs
 		}
 
 		// ── Buckets ──
@@ -186,7 +194,7 @@ func (m rootModel) fetchData() tea.Cmd {
 			sReq.Page = scw.Int32Ptr(sPage)
 		}
 
-		return dataMsg{buckets: buckets, clusters: clusters, projects: projects, registryNamespaces: registryNamespaces, secrets: secrets}
+		return dataMsg{buckets: buckets, clusters: clusters, projects: projects, registryNamespaces: registryNamespaces, secrets: secrets, servers: servers}
 	}
 }
 

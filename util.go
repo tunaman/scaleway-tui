@@ -218,6 +218,18 @@ func hasTransientNode(nodes []k8sNode) bool {
 	return false
 }
 
+// hasTransientServer returns true if any server is in a transient state that
+// warrants continued polling (starting, stopping).
+func hasTransientServer(servers []instanceServer) bool {
+	for _, s := range servers {
+		switch s.status {
+		case "starting", "stopping":
+			return true
+		}
+	}
+	return false
+}
+
 // ─────────────────────────────────────────────
 // Billing helpers
 // ─────────────────────────────────────────────
