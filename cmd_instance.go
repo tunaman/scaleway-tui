@@ -93,7 +93,7 @@ func serverFromSDK(s *instance.Server) instanceServer {
 		pubIP = s.PublicIPs[0].Address.String()
 	}
 	if pubIP == "" && s.PublicIP != nil { //nolint:staticcheck // fallback for pre-routed-IP servers
-		pubIP = s.PublicIP.Address.String()
+		pubIP = s.PublicIP.Address.String() //nolint:staticcheck
 	}
 	privIP := ""
 	if s.PrivateIP != nil { //nolint:staticcheck // only non-nil on pre-routed-IP servers
