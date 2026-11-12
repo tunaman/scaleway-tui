@@ -219,6 +219,18 @@ type rootModel struct {
 		total     int64
 	}
 
+	// Download progress overlay
+	download struct {
+		active    bool
+		filename  string
+		bytesRead int64
+		total     int64
+		fileNum   int
+		fileTotal int
+	}
+	downloadTargets []bucketEntry // file(s) queued for the pending download
+	downloadMsg     string        // "Downloaded N file(s) → dir" shown in the status bar
+
 	// Secrets (dashboard)
 	secrets        []secretItem
 	secretCursor   int
@@ -335,11 +347,27 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.upload.total = msg.total
 		return m, nil
 
+	case downloadProgressMsg:
+		m.download.active = true
+		m.download.filename = msg.filename
+		m.download.bytesRead = msg.bytesRead
+		m.download.total = msg.total
+		m.download.fileNum = msg.fileNum
+		m.download.fileTotal = msg.fileTotal
+		if msg.done {
+			m.download.active = false
+			m.downloadMsg = msg.summary
+			m.downloadTargets = nil
+		}
+		return m, nil
+
 	case errMsg:
 		m.loading = false
 		m.k8sNodesLoading = false // a failed node fetch would otherwise spin forever
 		m.regTagsLoading = false
 		m.upload.active = false // clear progress overlay if upload failed
+		m.download.active = false
+		m.downloadTargets = nil
 		m.err = msg.err
 		return m, nil
 
@@ -587,6 +615,7 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.browserScrollY = 0
 		m.browserScrollX = 0
 		m.browserSelected = make(map[string]bool)
+		m.downloadMsg = "" // a new directory listing supersedes any export notice
 		m.state = stateObjectBrowser
 		return m, nil
 

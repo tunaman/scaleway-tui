@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -338,9 +339,11 @@ func (m rootModel) uploadFile(bucket, prefix, localPath string) tea.Cmd {
 			defer func() { _ = f.Close() }()
 
 			pr := &progressReader{
-				r:        f,
-				filename: base,
-				total:    totalBytes,
+				r:     f,
+				total: totalBytes,
+				report: func(read, total int64) {
+					teaProgram.Send(uploadProgressMsg{filename: base, bytesRead: read, total: total})
+				},
 			}
 
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
@@ -365,14 +368,15 @@ func (m rootModel) uploadFile(bucket, prefix, localPath string) tea.Cmd {
 	}
 }
 
-// progressReader wraps the file and calls teaProgram.Send() as bytes are read.
+// progressReader wraps a reader and reports byte counts as they are read.
 // Sends are throttled to 50ms so the render loop has time to paint each frame.
+// The report callback decides which message type to send (upload vs download).
 type progressReader struct {
 	r        io.Reader
-	filename string
 	total    int64
 	read     int64
 	lastSent time.Time
+	report   func(read, total int64)
 }
 
 func (pr *progressReader) Read(p []byte) (int, error) {
@@ -382,11 +386,7 @@ func (pr *progressReader) Read(p []byte) (int, error) {
 		now := time.Now()
 		if now.Sub(pr.lastSent) >= 50*time.Millisecond || pr.read == pr.total {
 			pr.lastSent = now
-			teaProgram.Send(uploadProgressMsg{
-				filename:  pr.filename,
-				bytesRead: pr.read,
-				total:     pr.total,
-			})
+			pr.report(pr.read, pr.total)
 		}
 	}
 	return n, err
@@ -421,4 +421,95 @@ func (m rootModel) deleteEntries(bucket, prefix string, entries []bucketEntry) t
 		}
 		return deleteMsg{bucket: bucket, prefix: prefix}
 	}
+}
+
+// downloadFiles downloads one or more objects to a local directory, keeping
+// the key path relative to the browser's current prefix. Each file is
+// streamed to a ".part" temp file and renamed into place only when complete,
+// so an interrupted download never leaves a partial file. Progress and
+// completion are reported via teaProgram.Send() (same goroutine pattern as
+// uploadFile). Existing local files are overwritten.
+func (m rootModel) downloadFiles(bucket, prefix string, entries []bucketEntry, destDir string) tea.Cmd {
+	return func() tea.Msg {
+		dir := expandHome(destDir)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return errMsg{fmt.Errorf("create download dir: %w", err)}
+		}
+		mc := m.minioClient
+
+		go func() {
+			downloaded, failed := 0, 0
+			var firstErr error
+			for i, e := range entries {
+				rel := safeRelPath(strings.TrimPrefix(e.fullKey, prefix))
+				dest := filepath.Join(dir, rel)
+				total := e.size
+				// Notify immediately so the overlay shows total size before reads begin.
+				teaProgram.Send(downloadProgressMsg{filename: e.name, total: total, fileNum: i + 1, fileTotal: len(entries)})
+				report := func(read, total int64) {
+					teaProgram.Send(downloadProgressMsg{filename: e.name, bytesRead: read, total: total, fileNum: i + 1, fileTotal: len(entries)})
+				}
+				if err := downloadOne(mc, bucket, e.fullKey, dest, total, report); err != nil {
+					failed++
+					if firstErr == nil {
+						firstErr = err
+					}
+					continue
+				}
+				downloaded++
+			}
+
+			if downloaded == 0 {
+				if firstErr != nil {
+					teaProgram.Send(errMsg{firstErr})
+				} else {
+					teaProgram.Send(downloadProgressMsg{done: true, summary: "Nothing to download"})
+				}
+				return
+			}
+			summary := fmt.Sprintf("Downloaded %d file(s) → %s", downloaded, dir)
+			if failed > 0 {
+				summary += fmt.Sprintf(" (%d failed)", failed)
+			}
+			teaProgram.Send(downloadProgressMsg{done: true, summary: summary})
+		}()
+
+		return nil
+	}
+}
+
+// downloadOne fetches a single object and writes it to dest via a ".part"
+// temp file that is renamed into place only when complete, so an interrupted
+// download never leaves a partial file. report receives byte progress.
+func downloadOne(mc *minio.Client, bucket, key, dest string, total int64, report func(read, total int64)) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
+	obj, err := mc.GetObject(ctx, bucket, key, minio.GetObjectOptions{})
+	if err != nil {
+		return fmt.Errorf("download %s: %w", key, err)
+	}
+	defer func() { _ = obj.Close() }()
+
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		return fmt.Errorf("create directory for %s: %w", key, err)
+	}
+	tmp := dest + ".part"
+	f, err := os.Create(tmp)
+	if err != nil {
+		return fmt.Errorf("create %s: %w", tmp, err)
+	}
+
+	pr := &progressReader{r: obj, total: total, report: report}
+	_, copyErr := io.Copy(f, pr)
+	_ = f.Close()
+	if copyErr != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("download %s: %w", key, copyErr)
+	}
+	if err := os.Rename(tmp, dest); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("save %s: %w", dest, err)
+	}
+	return nil
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -29,6 +30,16 @@ func (m rootModel) renderInputOverlay(base string) string {
 		title = "  UPLOAD FILE"
 		subtitle = "  Enter the full local path of the file to upload."
 		placeholder = "/path/to/local/file.csv"
+	case inputModeDownload:
+		n := len(m.downloadTargets)
+		if n == 1 {
+			title = "  DOWNLOAD FILE"
+			subtitle = "  Enter a local directory to save the file to."
+		} else {
+			title = "  DOWNLOAD"
+			subtitle = fmt.Sprintf("  Enter a local directory to save the %d selected files to.", n)
+		}
+		placeholder = "/path/to/destination"
 	case inputModeSecretNewVersion:
 		title = "  NEW SECRET VERSION"
 		subtitle = "  Enter the secret value for " + m.secBrowserSecret.name + "."

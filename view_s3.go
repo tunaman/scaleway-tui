@@ -26,6 +26,15 @@ func (m rootModel) drawObjectBrowser() string {
 		return m.renderUploadProgress(base)
 	}
 
+	if m.download.active {
+		contentH := m.height - topBarHeight - statusBarHeight - 6
+		content := m.renderBrowserContent(m.width-8, contentH)
+		base := lipgloss.NewStyle().Margin(1, 2).Render(
+			lipgloss.JoinVertical(lipgloss.Left, topBar, content, statusBar),
+		)
+		return m.renderDownloadProgress(base)
+	}
+
 	if m.loading {
 		inner := lipgloss.Place(
 			m.width-4, m.height-topBarHeight-statusBarHeight-4,
@@ -67,18 +76,24 @@ func (m rootModel) renderBrowserStatusBar() string {
 		hotkey("A", "All"),
 		hotkey("C", "New folder"),
 		hotkey("U", "Upload"),
+		hotkey("X", "Download"),
 		hotkey("D", "Delete"),
 		hotkey("Esc", "Back"),
 		hotkey("Q", "Quit"),
 	)
 	count := fmt.Sprintf("%d items", len(m.browserEntries))
 	status := lipgloss.NewStyle().Foreground(colComment).Background(colBg2).Render(count)
+	// A recent download summary (if any) sits ahead of the hotkey list.
+	msg := ""
+	if m.downloadMsg != "" {
+		msg = lipgloss.NewStyle().Foreground(colGreen).Background(colBg2).Render(" " + m.downloadMsg + "  ")
+	}
 	barW := m.width - 4
-	spacer := lipgloss.NewStyle().Background(colBg2).Width(max(0, barW-lipgloss.Width(keys)-lipgloss.Width(status))).Render("")
+	spacer := lipgloss.NewStyle().Background(colBg2).Width(max(0, barW-lipgloss.Width(msg)-lipgloss.Width(keys)-lipgloss.Width(status))).Render("")
 	return lipgloss.NewStyle().
 		Background(colBg2).
 		Width(barW).
-		Render(lipgloss.JoinHorizontal(lipgloss.Top, keys, spacer, status))
+		Render(lipgloss.JoinHorizontal(lipgloss.Top, msg, keys, spacer, status))
 }
 
 func (m rootModel) renderBrowserContent(totalW, height int) string {
@@ -378,6 +393,82 @@ func (m rootModel) renderUploadProgress(base string) string {
 	divider := bg.Foreground(colBg3).Width(innerW).Render(strings.Repeat("─", innerW))
 
 	hint := bg.Foreground(colComment).Faint(true).Width(innerW).Render("Esc not available during upload")
+
+	body := bg.Width(innerW).Render(
+		lipgloss.JoinVertical(lipgloss.Left,
+			titleStr, fileLabel, "",
+			barLine, statsStr,
+			"", divider, hint,
+		),
+	)
+
+	dialog := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(colGreen).
+		Background(colBg2).
+		Padding(1, 2).
+		Width(dialogW).
+		Render(body)
+
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, dialog,
+		lipgloss.WithWhitespaceChars(" "),
+		lipgloss.WithWhitespaceStyle(lipgloss.NewStyle().Foreground(colBg)),
+	)
+}
+
+// renderDownloadProgress draws a centred download progress overlay.
+func (m rootModel) renderDownloadProgress(base string) string {
+	const dialogW = 56
+	const innerW = dialogW - 6 // border(1*2) + padding(2*2) = 6
+
+	bg := lipgloss.NewStyle().Background(colBg2)
+
+	pct := 0.0
+	if m.download.total > 0 {
+		pct = float64(m.download.bytesRead) / float64(m.download.total)
+		if pct > 1 {
+			pct = 1
+		}
+	}
+
+	// ── Title ──
+	titleStr := bg.Foreground(colGreen).Bold(true).Width(innerW).Render("DOWNLOADING")
+
+	// ── Filename (with "i/N" when downloading several files) ──
+	fname := m.download.filename
+	if fname == "" {
+		fname = "—"
+	}
+	if m.download.fileTotal > 1 && m.download.fileNum > 0 {
+		fname = fmt.Sprintf("%s  (%d/%d)", fname, m.download.fileNum, m.download.fileTotal)
+	}
+	if lipgloss.Width(fname) > innerW {
+		rr := []rune(fname)
+		fname = "…" + string(rr[len(rr)-(innerW-1):])
+	}
+	fileLabel := bg.Foreground(colFg).Width(innerW).Render(fname)
+
+	// ── Progress bar: barW chars + 7-char label "100.0%" right-aligned ──
+	const pctW = 7 // " 100.0%"
+	barW := innerW - pctW - 1
+	filled := int(float64(barW) * pct)
+	if filled > barW {
+		filled = barW
+	}
+	barFilled := lipgloss.NewStyle().Background(colBg2).Foreground(colGreen).Render(strings.Repeat("█", filled))
+	barEmpty := lipgloss.NewStyle().Background(colBg2).Foreground(colBg3).Render(strings.Repeat("░", barW-filled))
+	pctLabel := bg.Foreground(colComment).Width(pctW + 1).Align(lipgloss.Right).
+		Render(fmt.Sprintf("%.1f%%", pct*100))
+	barLine := lipgloss.JoinHorizontal(lipgloss.Top, barFilled, barEmpty, pctLabel)
+
+	// ── Stats ──
+	transferred := fmt.Sprintf("%s / %s", formatBytes(m.download.bytesRead), formatBytes(m.download.total))
+	statsStr := bg.Foreground(colComment).Width(innerW).Render(transferred)
+
+	// ── Divider ──
+	divider := bg.Foreground(colBg3).Width(innerW).Render(strings.Repeat("─", innerW))
+
+	hint := bg.Foreground(colComment).Faint(true).Width(innerW).Render("Esc not available during download")
 
 	body := bg.Width(innerW).Render(
 		lipgloss.JoinVertical(lipgloss.Left,

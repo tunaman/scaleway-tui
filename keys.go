@@ -78,6 +78,13 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				m.upload.bytesRead = 0
 				m.upload.total = 0
 				return m, m.uploadFile(m.browserBucket, m.browserPrefix, val)
+			case inputModeDownload:
+				targets := m.downloadTargets
+				m.downloadTargets = nil
+				m.input.active = false
+				m.download.active = true
+				m.download.fileTotal = len(targets)
+				return m, m.downloadFiles(m.browserBucket, m.browserPrefix, targets, val)
 			}
 
 		case "backspace", "ctrl+h":
@@ -559,7 +566,8 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	switch msg.String() {
 	case "ctrl+c", "q":
-		if m.showConfirm || m.input.active || m.secShowContent || m.instConfirmAction != instActionNone {
+		if m.showConfirm || m.input.active || m.secShowContent || m.instConfirmAction != instActionNone ||
+			m.upload.active || m.download.active {
 			// Dismiss overlays rather than quitting.
 			m.showConfirm = false
 			m.input.active = false
@@ -572,6 +580,10 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Quit
 	case "esc":
+		if m.upload.active || m.download.active {
+			// Transfers can't be interrupted — the overlay closes itself.
+			return m, nil
+		}
 		if m.secShowContent {
 			m.secShowContent = false
 			m.secContent = ""
@@ -960,6 +972,31 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				m.k8sReplaceNodeID = n.id
 				m.k8sReplaceNodeName = n.name
 				m.k8sConfirmReplace = true
+			}
+		}
+		// Object browser: download the selected file(s), or the file under
+		// the cursor when nothing is selected.
+		if m.state == stateObjectBrowser && !m.loading && !m.showConfirm && !m.upload.active && !m.download.active {
+			var targets []bucketEntry
+			if len(m.browserSelected) > 0 {
+				for _, e := range m.browserEntries {
+					if !e.isDir && m.browserSelected[e.fullKey] {
+						targets = append(targets, e)
+					}
+				}
+			} else if len(m.browserEntries) > 0 {
+				e := m.browserEntries[m.browserCursor]
+				if !e.isDir {
+					targets = []bucketEntry{e}
+				}
+			}
+			if len(targets) > 0 {
+				m.downloadTargets = targets
+				m.input.active = true
+				m.input.mode = inputModeDownload
+				m.input.value = ""
+				m.input.cursor = 0
+				m.input.errStr = ""
 			}
 		}
 	case "tab":
