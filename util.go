@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"image/color"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -189,6 +191,32 @@ func parentPrefix(prefix string) string {
 		return ""
 	}
 	return trimmed[:idx+1]
+}
+
+// expandHome replaces a leading "~" in a local path with the user's home
+// directory (e.g. "~/Downloads" → "/home/user/Downloads").
+func expandHome(p string) string {
+	if p == "~" || strings.HasPrefix(p, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			return home + strings.TrimPrefix(p, "~")
+		}
+	}
+	return p
+}
+
+// safeRelPath turns an S3 key (relative to the current prefix) into a local
+// file path, dropping empty, "." and ".." segments so a hostile key can never
+// escape the download directory.
+func safeRelPath(key string) string {
+	segments := strings.Split(key, "/")
+	parts := make([]string, 0, len(segments))
+	for _, s := range segments {
+		if s == "" || s == "." || s == ".." {
+			continue
+		}
+		parts = append(parts, s)
+	}
+	return filepath.Join(parts...)
 }
 
 func max(a, b int) int {

@@ -30,8 +30,8 @@ The codebase is a single Go package (`package main`) split across these files:
 | `config.go` | `tuiConfig`, `loadTUIConfig`, `saveTUIConfig`, `buildClients` |
 | `keys.go` | `handleKey`, `handleEsc`, `handleUp`, `handleDown`, `handleEnter`, `activateProfile` |
 | `filter.go` | `filteredBuckets/RegistryImages/RegistryTags/RegistryNamespaces/Secrets/SecretVersions`, `maybeCalculateSize` |
-| `util.go` | `panelBox`, `padRight`, `renderVScrollBar`, `formatBytes`, `formatEuroShort`, `parentPrefix`, `prevMonth`, `nextMonth`, `moneyToFloat`, `min`, `max` |
-| `cmd_s3.go` | `fetchData`, `calculateSize`, `fetchBucketContents`, `createBucket/Folder`, `uploadFile`, `deleteEntries`, `progressReader` |
+| `util.go` | `panelBox`, `padRight`, `renderVScrollBar`, `formatBytes`, `formatEuroShort`, `parentPrefix`, `expandHome`, `safeRelPath`, `prevMonth`, `nextMonth`, `moneyToFloat`, `min`, `max` |
+| `cmd_s3.go` | `fetchData`, `calculateSize`, `fetchBucketContents`, `createBucket/Folder`, `uploadFile`, `downloadFiles` (multi-file, `.part` temp + rename), `deleteEntries`, `progressReader` |
 | `cmd_instance.go` | `listServersAllZones` (all zones × all states of the region), `serverFromSDK`, `fetchServers`, `powerServer`, `pollServersAfterDelay`, `regionZones` |
 | `cmd_k8s.go` | `fetchNodePools` (annotates each pool with node-type stock via `fetchServerTypesAvailability`), `fetchNodes`, `rebootNode`, `replaceNode` |
 | `cmd_registry.go` | `fetchRegistryImages/Tags`, `deleteRegistryTags` |
@@ -42,7 +42,7 @@ The codebase is a single Go package (`package main`) split across these files:
 | `view_picker.go` | `drawProfilePicker` |
 | `view_dashboard.go` | `drawDashboard`, `renderTopBar/StatusBar/Nav/Content`, `renderServers/ServerDetail` (Instances, incl. power-action confirm dialog), `renderBuckets/Clusters/Registry/Secrets/BillingPreview` |
 | `view_input.go` | `renderInputOverlay` — shared input dialog for all input modes |
-| `view_s3.go` | `drawObjectBrowser`, browser render helpers, `renderConfirmDialog/UploadProgress` |
+| `view_s3.go` | `drawObjectBrowser`, browser render helpers, `renderConfirmDialog/UploadProgress/DownloadProgress` |
 | `view_registry.go` | `drawRegistryBrowser`, `renderRegistryVersionPane`, tag action/delete overlays |
 | `view_secrets.go` | `drawSecretsBrowser`, `renderSecretVersionDetailPane`, `renderSecretContentOverlay` |
 | `view_billing.go` | `drawBilling`, `renderBillingChart/Detail/TopBar/StatusBar`, `renderBillingProjectOverlay`, `renderBillingExportOverlay` |
@@ -72,6 +72,7 @@ All blocking work (API calls, file uploads) uses `tea.Cmd` closures that return 
 - `dataMsg` — initial data load
 - `bucketContentsMsg` — S3 directory listing
 - `uploadProgressMsg` — streamed upload progress
+- `downloadProgressMsg` — streamed download progress (per-file byte counts + i/N file counter; `done` carries the status-bar summary)
 - `k8sNodePoolsMsg` — node pools loaded for a cluster
 - `k8sNodesMsg` — nodes loaded for a pool
 - `k8sNodeRebootedMsg` — node reboot confirmed
@@ -87,6 +88,7 @@ Upload progress uses a global `teaProgram` variable to `Send()` messages from a 
 Overlays are rendered conditionally in `View()` on top of the base content using boolean flags:
 - `m.input.active` — text input dialog (`view_input.go`); covers all `inputMode` variants
 - `m.upload.active` — upload progress bar (`view_s3.go`)
+- `m.download.active` — download progress bar (`view_s3.go`); `X` in the object browser asks for a destination dir via `inputModeDownload`
 - `m.showConfirm` — S3 delete confirmation (`view_s3.go`)
 - `m.regTagActionOverlay` — registry pull-command dialog (`view_registry.go`)
 - `m.regConfirmDeleteTags` — registry tag delete confirmation (`view_registry.go`)

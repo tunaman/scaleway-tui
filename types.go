@@ -247,6 +247,7 @@ const (
 	inputModeBucket inputMode = iota
 	inputModeFolder
 	inputModeUpload
+	inputModeDownload
 	inputModeSecretNewVersion
 	inputModeSecretUpdateDesc
 	inputModeSecret
@@ -259,6 +260,18 @@ type uploadProgressMsg struct {
 	bytesRead int64
 	total     int64
 	done      bool
+}
+
+// downloadProgressMsg carries byte progress for the current file of a
+// (possibly multi-file) download. done=true marks the final file.
+type downloadProgressMsg struct {
+	filename  string
+	bytesRead int64
+	total     int64
+	fileNum   int
+	fileTotal int
+	done      bool
+	summary   string // final "Downloaded N file(s) → dir" line (only when done)
 }
 
 type createDoneMsg struct {
