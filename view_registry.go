@@ -336,6 +336,27 @@ func (m rootModel) renderRegistryVersionPane(paneW, paneH int) string {
 	return panelBox(title, paneW, paneH, borderColor, content)
 }
 
+// registryPullCommand returns the docker pull command for the tag currently
+// under the cursor in the versions pane ("" when nothing is selectable).
+// Shared by the pull-instructions overlay and its copy action.
+func (m rootModel) registryPullCommand() string {
+	visible := m.filteredRegistryImages()
+	if len(visible) == 0 || m.regBrowserCursor >= len(visible) {
+		return ""
+	}
+	img := visible[m.regBrowserCursor]
+	if len(img.tags) == 0 || m.regBrowserTagCursor >= len(img.tags) {
+		return ""
+	}
+	tag := img.tags[m.regBrowserTagCursor]
+
+	pullBase := m.regBrowserNamespace.endpoint + "/" + img.name
+	if strings.HasPrefix(tag.name, "sha256-") {
+		return "docker pull " + pullBase + "@sha256:" + tag.name[len("sha256-"):]
+	}
+	return "docker pull " + pullBase + ":" + tag.name
+}
+
 // renderRegistryTagActionOverlay shows pull instructions for the tag currently
 // selected in the versions pane.
 func (m rootModel) renderRegistryTagActionOverlay() string {
@@ -348,15 +369,8 @@ func (m rootModel) renderRegistryTagActionOverlay() string {
 		return ""
 	}
 	tag := img.tags[m.regBrowserTagCursor]
-	ns := m.regBrowserNamespace
 
-	pullBase := ns.endpoint + "/" + img.name
-	var pullCmd string
-	if strings.HasPrefix(tag.name, "sha256-") {
-		pullCmd = "docker pull " + pullBase + "@sha256:" + tag.name[len("sha256-"):]
-	} else {
-		pullCmd = "docker pull " + pullBase + ":" + tag.name
-	}
+	pullCmd := m.registryPullCommand()
 
 	dialogW := min(m.width-8, 90)
 	innerW := dialogW - 6
@@ -383,7 +397,7 @@ func (m rootModel) renderRegistryTagActionOverlay() string {
 	closeBtn := lipgloss.NewStyle().
 		Background(colBg3).Foreground(colFg).
 		Width(innerW).Align(lipgloss.Center).
-		Render("Esc  Close")
+		Render("C  Copy    Esc  Close")
 
 	body := bg.Width(innerW).Render(
 		lipgloss.JoinVertical(lipgloss.Left,

@@ -313,7 +313,7 @@ func (m rootModel) renderSecretContentOverlay() string {
 	closeBtn := lipgloss.NewStyle().
 		Background(colBg3).Foreground(colFg).
 		Width(innerW).Align(lipgloss.Center).
-		Render("Any key  Close")
+		Render("C  Copy    Any other key  Close")
 
 	body := bg.Width(innerW).Render(
 		lipgloss.JoinVertical(lipgloss.Left,

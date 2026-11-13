@@ -353,6 +353,10 @@ type errMsg struct{ err error }
 
 func (e errMsg) Error() string { return e.err.Error() }
 
+// clipboardNoteClearedMsg clears the "Copied → clipboard" status note in
+// the top bar after it has been on screen for a couple of seconds.
+type clipboardNoteClearedMsg struct{}
+
 // ─────────────────────────────────────────────
 // Billing data types
 // ─────────────────────────────────────────────

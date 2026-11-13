@@ -77,6 +77,7 @@ func (m rootModel) renderBrowserStatusBar() string {
 		hotkey("C", "New folder"),
 		hotkey("U", "Upload"),
 		hotkey("X", "Download"),
+		hotkey("Y", "Copy key"),
 		hotkey("D", "Delete"),
 		hotkey("Esc", "Back"),
 		hotkey("Q", "Quit"),

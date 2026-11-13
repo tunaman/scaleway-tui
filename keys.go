@@ -259,11 +259,13 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// ── Secret content overlay: close on any key ──
+	// ── Secret content overlay: C copies, any other key closes ──
 	if m.secShowContent {
 		switch msg.String() {
 		case "ctrl+c":
 			return m, tea.Quit
+		case "c", "C":
+			return m.copyToClipboard(m.secContent)
 		default:
 			m.secShowContent = false
 			m.secContent = ""
@@ -271,11 +273,15 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// ── Tag action overlay: pull instructions ──
+	// ── Tag action overlay: pull instructions (C copies the command) ──
 	if m.regTagActionOverlay {
 		switch msg.String() {
 		case "ctrl+c":
 			return m, tea.Quit
+		case "c", "C":
+			if cmd := m.registryPullCommand(); cmd != "" {
+				return m.copyToClipboard(cmd)
+			}
 		default:
 			m.regTagActionOverlay = false
 		}
@@ -815,6 +821,12 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.loading = true
 			return m, tea.Batch(m.spin.Tick, m.powerServer(id, zone, action))
 		}
+		// Object browser: yank (copy) the selected entry's full S3 key.
+		if m.state == stateObjectBrowser && !m.loading && !m.showConfirm && !m.upload.active && !m.download.active {
+			if len(m.browserEntries) > 0 {
+				return m.copyToClipboard(m.browserEntries[m.browserCursor].fullKey)
+			}
+		}
 	case "n", "N":
 		if m.instConfirmAction != instActionNone {
 			m.instConfirmAction = instActionNone
@@ -861,6 +873,30 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.input.value = ""
 			m.input.cursor = 0
 			m.input.errStr = ""
+		} else if m.state == stateDashboard && m.focus == focusContent && m.activeService == serviceInstance {
+			// Copy the selected server's IP (public, falling back to private).
+			if s := m.selectedServer(); s != nil {
+				ip := s.publicIP
+				if ip == "" {
+					ip = s.privateIP
+				}
+				if ip != "" {
+					return m.copyToClipboard(ip)
+				}
+			}
+		} else if m.state == stateK8sBrowser && m.k8sBrowserFocus == 1 && !m.k8sConfirmReboot && !m.k8sConfirmReplace {
+			// Copy the selected node's public IP from the nodes pane.
+			if len(m.k8sBrowserNodes) > 0 && m.k8sBrowserNodeCursor < len(m.k8sBrowserNodes) {
+				if ip := m.k8sBrowserNodes[m.k8sBrowserNodeCursor].publicIPv4; ip != "" {
+					return m.copyToClipboard(ip)
+				}
+			}
+		} else if m.state == stateIAMBrowser && m.iamTab == iamTabAPIKeys && !m.iamFiltering {
+			// Copy the selected API key's access key.
+			keys := m.filteredIAMAPIKeys()
+			if len(keys) > 0 && m.iamCursor < len(keys) {
+				return m.copyToClipboard(keys[m.iamCursor].accessKey)
+			}
 		}
 	case "u", "U":
 		if m.state == stateObjectBrowser && !m.loading && !m.showConfirm {
@@ -1560,6 +1596,24 @@ func (m rootModel) handleEnter() (rootModel, tea.Cmd) {
 	}
 	return m, nil
 }
+
+// ─────────────────────────────────────────────
+// Clipboard (OSC 52)
+// ─────────────────────────────────────────────
+
+// copyToClipboard puts text on the system clipboard via the terminal's OSC 52
+// support (tea.SetClipboard) and flashes a short note in the top bar.
+// Terminals without OSC 52 support (e.g. stock xterm) simply ignore the
+// sequence — the UI degrades to no copy, no error.
+func (m rootModel) copyToClipboard(text string) (rootModel, tea.Cmd) {
+	m.clipboardNote = "Copied → clipboard"
+	return m, tea.Batch(
+		tea.SetClipboard(text),
+		tea.Tick(clipboardNoteDuration, func(time.Time) tea.Msg { return clipboardNoteClearedMsg{} }),
+	)
+}
+
+const clipboardNoteDuration = 2 * time.Second
 
 // ─────────────────────────────────────────────
 // Profile activation (Cmd)
