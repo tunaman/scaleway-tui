@@ -33,7 +33,7 @@ The codebase is a single Go package (`package main`) split across these files:
 | `util.go` | `panelBox`, `padRight`, `renderVScrollBar`, `formatBytes`, `formatEuroShort`, `parentPrefix`, `expandHome`, `safeRelPath`, `prevMonth`, `nextMonth`, `moneyToFloat`, `min`, `max` |
 | `cmd_s3.go` | `fetchData`, `calculateSize`, `fetchBucketContents`, `createBucket/Folder`, `uploadFile`, `downloadFiles` (multi-file, `.part` temp + rename), `deleteEntries`, `progressReader` |
 | `cmd_instance.go` | `listServersAllZones` (all zones × all states of the region), `serverFromSDK` (collects `ipamIPIDs` from `PrivateNics`), `fetchServers`, `powerServer`, `pollServersAfterDelay`, `regionZones`, `fetchServerPrivateIP` + `selectedServerPrivateIPCmd` (lazy IPAM private-IP resolution) |
-| `cmd_k8s.go` | `fetchNodePools` (annotates each pool with node-type stock via `fetchServerTypesAvailability`), `fetchNodes`, `rebootNode`, `replaceNode` |
+| `cmd_k8s.go` | `fetchNodePools` (annotates each pool with node-type stock via `fetchServerTypesAvailability`), `fetchNodes`, `rebootNode`, `replaceNode`, `fetchKubeConfig` (raw YAML via `GetClusterKubeConfig`) |
 | `cmd_registry.go` | `fetchRegistryImages/Tags`, `deleteRegistryTags` |
 | `cmd_billing.go` | `fetchBillingOverview`, `fetchConsumptionDetail` (aggregates by category+product), `exportBillingCSV` (date-range, project-filtered) |
 | `cmd_secrets.go` | `fetchSecretVersions`, `accessSecretVersion`, `createSecretVersion`, `updateSecretVersionDesc` |
@@ -78,6 +78,7 @@ All blocking work (API calls, file uploads) uses `tea.Cmd` closures that return 
 - `k8sNodePoolsMsg` — node pools loaded for a cluster
 - `k8sNodesMsg` — nodes loaded for a pool
 - `k8sNodeRebootedMsg` — node reboot confirmed
+- `kubeConfigMsg` — cluster kubeconfig YAML loaded; handler copies it to the clipboard (`K` in the K8s browser)
 - `serversMsg` — Instances list loaded (all zones × states of the active region)
 - `serverActionDoneMsg` — power action accepted; triggers `fetchServers()`
 - `serverPollTickMsg` — periodic refresh while a server is starting/stopping

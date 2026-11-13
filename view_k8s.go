@@ -27,6 +27,7 @@ func (m rootModel) drawK8sBrowser() string {
 		hotkey("Tab", "Switch pane"),
 		hotkey("R", "Reboot node"),
 		hotkey("X", "Replace node"),
+		hotkey("K", "Kubeconfig"),
 		hotkey("C", "Copy IP"),
 		hotkey("F5", "Refresh"),
 		hotkey("Esc", "Back"),

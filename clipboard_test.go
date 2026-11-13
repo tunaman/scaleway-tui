@@ -77,6 +77,40 @@ func TestRegistryPullCommand(t *testing.T) {
 	}
 }
 
+// TestK8sKubeconfigKey verifies that K in the K8s browser starts the
+// kubeconfig fetch (cmd returned, loading set).
+func TestK8sKubeconfigKey(t *testing.T) {
+	m := rootModel{
+		state:             stateK8sBrowser,
+		k8sBrowserCluster: cluster{id: "c1", name: "test-cluster", region: "nl-ams"},
+	}
+	out, cmd := m.handleKey(tea.KeyPressMsg{Text: "K", Code: 'K'})
+	if cmd == nil {
+		t.Fatal("K in K8s browser produced no cmd")
+	}
+	m = out.(rootModel)
+	if !m.loading {
+		t.Error("loading should be set while fetching the kubeconfig")
+	}
+}
+
+// TestKubeConfigMsgCopiesToClipboard verifies the fetched kubeconfig is copied
+// to the clipboard and the loading state is cleared.
+func TestKubeConfigMsgCopiesToClipboard(t *testing.T) {
+	m := rootModel{loading: true}
+	out, cmd := m.Update(kubeConfigMsg{yaml: "apiVersion: v1\nkind: Config\n"})
+	m = out.(rootModel)
+	if m.loading {
+		t.Error("loading should be cleared after the kubeconfig fetch")
+	}
+	if m.clipboardNote != "Copied → clipboard" {
+		t.Errorf("clipboardNote = %q, want the copy flash", m.clipboardNote)
+	}
+	if cmd == nil {
+		t.Fatal("expected a clipboard cmd")
+	}
+}
+
 // TestKeyBindingsCopyActions verifies each copy hotkey produces a command and
 // sets the top-bar note.
 func TestKeyBindingsCopyActions(t *testing.T) {
