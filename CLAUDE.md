@@ -32,7 +32,7 @@ The codebase is a single Go package (`package main`) split across these files:
 | `filter.go` | `filteredBuckets/RegistryImages/RegistryTags/RegistryNamespaces/Secrets/SecretVersions`, `maybeCalculateSize` |
 | `util.go` | `panelBox`, `padRight`, `renderVScrollBar`, `formatBytes`, `formatEuroShort`, `parentPrefix`, `expandHome`, `safeRelPath`, `prevMonth`, `nextMonth`, `moneyToFloat`, `min`, `max` |
 | `cmd_s3.go` | `fetchData`, `calculateSize`, `fetchBucketContents`, `createBucket/Folder`, `uploadFile`, `downloadFiles` (multi-file, `.part` temp + rename), `deleteEntries`, `progressReader` |
-| `cmd_instance.go` | `listServersAllZones` (all zones × all states of the region), `serverFromSDK`, `fetchServers`, `powerServer`, `pollServersAfterDelay`, `regionZones` |
+| `cmd_instance.go` | `listServersAllZones` (all zones × all states of the region), `serverFromSDK` (collects `ipamIPIDs` from `PrivateNics`), `fetchServers`, `powerServer`, `pollServersAfterDelay`, `regionZones`, `fetchServerPrivateIP` + `selectedServerPrivateIPCmd` (lazy IPAM private-IP resolution) |
 | `cmd_k8s.go` | `fetchNodePools` (annotates each pool with node-type stock via `fetchServerTypesAvailability`), `fetchNodes`, `rebootNode`, `replaceNode` |
 | `cmd_registry.go` | `fetchRegistryImages/Tags`, `deleteRegistryTags` |
 | `cmd_billing.go` | `fetchBillingOverview`, `fetchConsumptionDetail` (aggregates by category+product), `exportBillingCSV` (date-range, project-filtered) |
@@ -65,6 +65,8 @@ The IAM browser (`stateIAMBrowser`) is read-only and organization-scoped. It has
 
 The Instances service (`serviceInstance`) is a dashboard-level view only — no dedicated `state` constant. It renders a server list + SERVER INFO detail pane (`renderServers`) with power actions (`O`/`S`/`R`) that set `m.instConfirmAction` and show a confirm dialog; after a successful action the list refetches and polls every 3s while any server is `starting`/`stopping` (`serverPollTickMsg`).
 
+**Private IPs (IPAM):** modern routed-IP servers carry no private address on the NIC — only `ipam_ip_ids` (collected into `instanceServer.ipamIPIDs` by `serverFromSDK`). The address is resolved lazily via the IPAM API: `selectedServerPrivateIPCmd()` fires `fetchServerPrivateIP` for the currently selected server (first IPv4 of its NIC IPs) when it isn't already cached in `m.privateIPs` or in flight (`m.privateIPLoadingID`). It is triggered on initial load (`dataMsg`/`serversMsg`) and on every cursor move in the Instances list. The detail pane shows the resolved address, a faint "Resolving…" while in flight, or "—" otherwise. Best-effort: a lookup failure just leaves "—".
+
 `View()` dispatches to a `draw*()` function based on the current `state`. `handleKey()` is the central keyboard dispatcher; it delegates to `handleUp()`, `handleDown()`, `handleEnter()`, `handleEsc()` which each contain state-specific logic.
 
 ### Async I/O Pattern
@@ -79,6 +81,7 @@ All blocking work (API calls, file uploads) uses `tea.Cmd` closures that return 
 - `serversMsg` — Instances list loaded (all zones × states of the active region)
 - `serverActionDoneMsg` — power action accepted; triggers `fetchServers()`
 - `serverPollTickMsg` — periodic refresh while a server is starting/stopping
+- `serverPrivateIPMsg` — one server's IPAM-resolved private IP ("" when none found)
 - `iamDataMsg` — all six IAM lists loaded (sets `stateIAMBrowser`, builds the ID→name map)
 - `clipboardNoteClearedMsg` — clears the "Copied → clipboard" top-bar note after `clipboardNoteDuration`
 - `errMsg` — any async error

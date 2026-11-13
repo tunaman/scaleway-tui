@@ -8,6 +8,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/scaleway/scaleway-sdk-go/api/instance/v1"
+	"github.com/scaleway/scaleway-sdk-go/api/ipam/v1"
 	"github.com/scaleway/scaleway-sdk-go/scw"
 )
 
@@ -108,6 +109,15 @@ func serverFromSDK(s *instance.Server) instanceServer {
 		created = *s.CreationDate
 	}
 
+	// Routed-IP servers carry no private address on the NIC itself — the IPs
+	// are referenced by IPAM ID and resolved lazily (fetchServerPrivateIP).
+	var ipamIPIDs []string
+	for _, nic := range s.PrivateNics {
+		if nic != nil {
+			ipamIPIDs = append(ipamIPIDs, nic.IpamIPIDs...)
+		}
+	}
+
 	// Volumes arrive as a map keyed by slot index ("0", "1", ...); sort by
 	// index so the boot volume (slot 0) comes first.
 	type volSlot struct {
@@ -144,6 +154,7 @@ func serverFromSDK(s *instance.Server) instanceServer {
 		zone:           zone,
 		publicIP:       pubIP,
 		privateIP:      privIP,
+		ipamIPIDs:      ipamIPIDs,
 		protected:      s.Protected,
 		tags:           s.Tags,
 		created:        created,
@@ -169,6 +180,47 @@ func pollServersAfterDelay() tea.Cmd {
 		time.Sleep(3 * time.Second)
 		return serverPollTickMsg{}
 	}
+}
+
+// fetchServerPrivateIP resolves a routed-IP server's private address by
+// looking up its IPAM NIC IPs. The first IPv4 found wins. Best-effort: a
+// lookup failure or no IPv4 yields an empty IP (the detail pane keeps "—").
+func (m rootModel) fetchServerPrivateIP(server instanceServer) tea.Cmd {
+	return func() tea.Msg {
+		ipamAPI := ipam.NewAPI(m.scwClient)
+		for _, id := range server.ipamIPIDs {
+			ip, err := ipamAPI.GetIP(&ipam.GetIPRequest{IPID: id})
+			if err != nil || ip == nil {
+				continue
+			}
+			if ip.IsIPv6 {
+				continue
+			}
+			if addr := ip.Address.IP.String(); addr != "" {
+				return serverPrivateIPMsg{serverID: server.id, ip: addr}
+			}
+		}
+		return serverPrivateIPMsg{serverID: server.id}
+	}
+}
+
+// selectedServerPrivateIPCmd returns a cmd that resolves the private IP of
+// the currently selected server (via IPAM), or nil when there is nothing to
+// fetch (no NIC IPs, already cached, or already in flight). It marks the
+// server as loading on the model it is called on.
+func (m *rootModel) selectedServerPrivateIPCmd() tea.Cmd {
+	s := m.selectedServer()
+	if s == nil || len(s.ipamIPIDs) == 0 {
+		return nil
+	}
+	if _, ok := m.privateIPs[s.id]; ok {
+		return nil
+	}
+	if m.privateIPLoadingID == s.id {
+		return nil
+	}
+	m.privateIPLoadingID = s.id
+	return m.fetchServerPrivateIP(*s)
 }
 
 // instanceActionAPI maps the TUI confirm-action constants to SDK actions.

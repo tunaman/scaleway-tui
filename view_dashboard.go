@@ -651,9 +651,19 @@ func (m rootModel) renderServerDetail() string {
 	} else {
 		lines = append(lines, " "+lipgloss.NewStyle().Foreground(colComment).Render(padRight("Public IP", 10))+dash)
 	}
-	if s.privateIP != "" {
-		lines = append(lines, key("Private IP", s.privateIP, colFg))
-	} else {
+	// Private IP: the deprecated field for pre-routed-IP servers, else the
+	// IPAM-resolved address for routed-IP servers (fetched lazily).
+	privIP := s.privateIP
+	if privIP == "" {
+		privIP = m.privateIPs[s.id]
+	}
+	switch {
+	case privIP != "":
+		lines = append(lines, key("Private IP", privIP, colFg))
+	case m.privateIPLoadingID == s.id:
+		lines = append(lines, " "+lipgloss.NewStyle().Foreground(colComment).Render(padRight("Private IP", 10))+
+			lipgloss.NewStyle().Faint(true).Render(" Resolving…"))
+	default:
 		lines = append(lines, " "+lipgloss.NewStyle().Foreground(colComment).Render(padRight("Private IP", 10))+dash)
 	}
 	if len(s.tags) > 0 {
