@@ -17,7 +17,7 @@ golangci-lint run
 ./bin/scw-tui
 ```
 
-There are render tests in `view_instance_test.go` (`go test .`); no other test coverage.
+There are render/behavior tests in `view_instance_test.go`, `s3_download_test.go`, and `clipboard_test.go` (`go test .`).
 
 ## Architecture
 
@@ -28,7 +28,7 @@ The codebase is a single Go package (`package main`) split across these files:
 | `main.go` | Constants, Dracula palette, `rootModel` struct (incl. billing + org state), `Init`, `Update`, `View`, `main` |
 | `types.go` | All data structs and tea message types |
 | `config.go` | `tuiConfig`, `loadTUIConfig`, `saveTUIConfig`, `buildClients` |
-| `keys.go` | `handleKey`, `handleEsc`, `handleUp`, `handleDown`, `handleEnter`, `activateProfile` |
+| `keys.go` | `handleKey`, `handleEsc`, `handleUp`, `handleDown`, `handleEnter`, `activateProfile`, `copyToClipboard` (OSC 52 copy via `tea.SetClipboard` + top-bar note) |
 | `filter.go` | `filteredBuckets/RegistryImages/RegistryTags/RegistryNamespaces/Secrets/SecretVersions`, `maybeCalculateSize` |
 | `util.go` | `panelBox`, `padRight`, `renderVScrollBar`, `formatBytes`, `formatEuroShort`, `parentPrefix`, `expandHome`, `safeRelPath`, `prevMonth`, `nextMonth`, `moneyToFloat`, `min`, `max` |
 | `cmd_s3.go` | `fetchData`, `calculateSize`, `fetchBucketContents`, `createBucket/Folder`, `uploadFile`, `downloadFiles` (multi-file, `.part` temp + rename), `deleteEntries`, `progressReader` |
@@ -43,7 +43,7 @@ The codebase is a single Go package (`package main`) split across these files:
 | `view_dashboard.go` | `drawDashboard`, `renderTopBar/StatusBar/Nav/Content`, `renderServers/ServerDetail` (Instances, incl. power-action confirm dialog), `renderBuckets/Clusters/Registry/Secrets/BillingPreview` |
 | `view_input.go` | `renderInputOverlay` — shared input dialog for all input modes |
 | `view_s3.go` | `drawObjectBrowser`, browser render helpers, `renderConfirmDialog/UploadProgress/DownloadProgress` |
-| `view_registry.go` | `drawRegistryBrowser`, `renderRegistryVersionPane`, tag action/delete overlays |
+| `view_registry.go` | `drawRegistryBrowser`, `renderRegistryVersionPane`, `registryPullCommand` (shared by pull overlay + copy action), tag action/delete overlays |
 | `view_secrets.go` | `drawSecretsBrowser`, `renderSecretVersionDetailPane`, `renderSecretContentOverlay` |
 | `view_billing.go` | `drawBilling`, `renderBillingChart/Detail/TopBar/StatusBar`, `renderBillingProjectOverlay`, `renderBillingExportOverlay` |
 | `view_iam.go` | `drawIAMBrowser`, `renderIAMTabStrip`, `iamTabContent` (per-tab columns), `renderIAMPreview` (dashboard pane), `iamResolveName` |
@@ -80,9 +80,13 @@ All blocking work (API calls, file uploads) uses `tea.Cmd` closures that return 
 - `serverActionDoneMsg` — power action accepted; triggers `fetchServers()`
 - `serverPollTickMsg` — periodic refresh while a server is starting/stopping
 - `iamDataMsg` — all six IAM lists loaded (sets `stateIAMBrowser`, builds the ID→name map)
+- `clipboardNoteClearedMsg` — clears the "Copied → clipboard" top-bar note after `clipboardNoteDuration`
 - `errMsg` — any async error
 
 Upload progress uses a global `teaProgram` variable to `Send()` messages from a background goroutine via the `progressReader` wrapper type.
+
+### Clipboard (OSC 52)
+Copy actions call `m.copyToClipboard(text)` (keys.go), which batches `tea.SetClipboard(text)` (Bubbletea v2's built-in OSC 52 command — the framework writes the escape sequence to the TTY itself) with a 2s `tea.Tick` that clears `m.clipboardNote`. The note ("✓ Copied → clipboard") is rendered in the top bar's right section (renderTopBar). Copy hotkeys: `C` in Instances (server IP), K8s nodes pane (node IP), IAM API-keys tab (access key), registry pull dialog, and secret content viewer; `Y` in the object browser (object key). Terminals without OSC 52 support simply ignore the sequence.
 
 ### Overlays
 Overlays are rendered conditionally in `View()` on top of the base content using boolean flags:

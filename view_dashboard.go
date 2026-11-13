@@ -153,6 +153,9 @@ func (m rootModel) renderTopBar() string {
 	if m.state == stateDashboard && m.activeService == serviceInstance {
 		rightInfo = comment(fmt.Sprintf("%d servers  ", len(m.servers)))
 	}
+	if m.clipboardNote != "" {
+		rightInfo = lipgloss.NewStyle().Foreground(colGreen).Bold(true).Render("✓ "+m.clipboardNote) + rightInfo
+	}
 	clock := lipgloss.NewStyle().Foreground(colComment).Render(" " + time.Now().Format("15:04") + " ")
 	rightPart := rightInfo + clock
 
@@ -186,6 +189,7 @@ func (m rootModel) renderStatusBar() string {
 			hotkey("O", "Power on"),
 			hotkey("S", "Power off"),
 			hotkey("R", "Reboot"),
+			hotkey("C", "Copy IP"),
 			hotkey("F5", "Refresh"),
 			hotkey("Q", "Quit"),
 		)

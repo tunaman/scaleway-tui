@@ -288,6 +288,9 @@ type rootModel struct {
 	billingProjectOverlay bool // project picker overlay visible
 	billingProjectCursor  int  // cursor inside the overlay list
 
+	// Clipboard feedback (OSC 52 copy via tea.SetClipboard)
+	clipboardNote string // "Copied → clipboard" flash shown in the top bar
+
 	// Widgets
 	spin spinner.Model
 
@@ -359,6 +362,10 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.downloadMsg = msg.summary
 			m.downloadTargets = nil
 		}
+		return m, nil
+
+	case clipboardNoteClearedMsg:
+		m.clipboardNote = ""
 		return m, nil
 
 	case errMsg:

@@ -90,6 +90,7 @@ func (m rootModel) drawIAMBrowser() string {
 		hotkey("←→", "Tab"),
 		hotkey("↑↓", "Navigate"),
 		hotkey("/", "Filter"),
+		hotkey("C", "Copy key"),
 		hotkey("F5", "Refresh"),
 		hotkey("Esc", "Back"),
 		hotkey("Q", "Quit"),

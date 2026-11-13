@@ -23,6 +23,7 @@ A keyboard-driven terminal UI for managing your [Scaleway](https://www.scaleway.
 - **IAM browser** — read-only, organization-scoped view with tabs for Users, Applications, Groups, Policies, API keys, and Logs; filter within any tab
 - **Billing view** — inspect current-period costs, filter by project, export date-range to CSV
 - **Project switcher** — switch between Scaleway projects without leaving the TUI
+- **Copy to clipboard** — copy server/node IPs, registry pull commands, secret values, S3 object keys, and API keys straight to your system clipboard via OSC 52 (supported by iTerm2, macOS Terminal, Windows Terminal, kitty, alacritty, foot, and most modern terminals)
 - **Vim-style keyboard navigation** — `j/k`, `/` to filter, and single-key actions throughout
 
 ## Prerequisites
@@ -81,6 +82,7 @@ On first launch you will be presented with a profile picker. Select a profile an
 | `O` | Power on (with confirmation) |
 | `S` | Power off (with confirmation) |
 | `R` | Reboot (with confirmation) |
+| `C` | Copy the selected server's IP to the clipboard |
 | `F5` | Refresh |
 | `Esc` | Back / clear filter |
 
@@ -92,6 +94,7 @@ On first launch you will be presented with a profile picker. Select a profile an
 | `c` | Create bucket (dashboard) / folder (browser) |
 | `u` | Upload file |
 | `x` | Download selected file(s) to a local directory (asks for the path) |
+| `y` | Copy (yank) the selected object's full key to the clipboard |
 | `d` | Delete selected object(s) |
 | `a` | Select / deselect all |
 | `Space` | Toggle selection |
@@ -103,6 +106,7 @@ On first launch you will be presented with a profile picker. Select a profile an
 | ----- | -------- |
 | `Tab` | Switch between images and tags panes |
 | `Enter` | Show pull command for selected tag |
+| `C` | (in pull dialog) Copy the pull command to the clipboard |
 | `Space` | Toggle tag selection |
 | `A` | Select / deselect all tags |
 | `D` | Delete selected tag(s) |
@@ -114,6 +118,7 @@ On first launch you will be presented with a profile picker. Select a profile an
 | `Tab` | Switch between node pools and nodes panes |
 | `j` / `k` | Navigate rows |
 | `R` | Reboot selected node (with confirmation) |
+| `C` | Copy the selected node's public IP to the clipboard (nodes pane) |
 | `F5` | Refresh |
 | `Esc` | Back |
 
@@ -132,6 +137,7 @@ On first launch you will be presented with a profile picker. Select a profile an
 | Key | Action |
 | ----- | -------- |
 | `Enter` | View secret content for selected version |
+| `C` | (in content viewer) Copy the secret value to the clipboard |
 | `n` | Add a new secret version |
 | `u` | Update description of selected version |
 
@@ -143,6 +149,7 @@ On first launch you will be presented with a profile picker. Select a profile an
 | `←` / `→` or `Tab` / `Shift+Tab` | Switch tab (Users, Applications, Groups, Policies, API keys, Logs) |
 | `j` / `k` | Navigate rows |
 | `/` | Filter the active tab |
+| `C` | Copy the selected API key's access key (API keys tab) |
 | `F5` | Refresh all IAM data |
 | `Esc` | Clear filter / back to dashboard |
 
