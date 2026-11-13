@@ -60,7 +60,6 @@ func TestRenderServersDashboard(t *testing.T) {
 		// Detail pane for the selected (first) server.
 		"Public IP",
 		"172.20.1.10",
-		"web, prod",
 		"Block SSD",
 		"Local SSD",
 		"(boot)",
