@@ -337,6 +337,9 @@ type k8sNodeRebootedMsg struct{}
 type k8sNodeReplacedMsg struct{}
 type k8sNodePollTickMsg struct{}
 
+// kubeConfigMsg carries the cluster kubeconfig YAML after a successful fetch.
+type kubeConfigMsg struct{ yaml string }
+
 // serversMsg carries the Instances list (all zones of the active region).
 type serversMsg struct {
 	servers []instanceServer
