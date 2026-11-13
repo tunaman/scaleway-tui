@@ -15,7 +15,7 @@ A keyboard-driven terminal UI for managing your [Scaleway](https://www.scaleway.
 ## Features
 
 - **Multi-profile support** — pick any profile from your existing `~/.config/scw/config.yaml`
-- **Instances browser** — list all servers across every zone of the region with type, IP, and state; power on, power off, and reboot (with confirmation); detail pane with volumes, tags, and IPs (private IPs of routed-IP servers are resolved live via the IPAM API)
+- **Instances browser** — list all servers across every zone of the region with type, IP, and state; power on, power off, and reboot (with confirmation); detail pane with volumes and IPs (private IPs of routed-IP servers are resolved live via the IPAM API)
 - **Object Storage browser** — navigate buckets and folders, view object sizes, upload, download one or more selected files to a local directory, create folders/buckets, and delete objects
 - **Kubernetes cluster browser** — list Kapsule clusters, browse node pools (autoscaling, node type, zone, volume), view nodes with status, and reboot nodes
 - **Container Registry browser** — browse namespaces, images, and tags; copy pull commands

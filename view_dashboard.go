@@ -666,9 +666,6 @@ func (m rootModel) renderServerDetail() string {
 	default:
 		lines = append(lines, " "+lipgloss.NewStyle().Foreground(colComment).Render(padRight("Private IP", 10))+dash)
 	}
-	if len(s.tags) > 0 {
-		lines = append(lines, key("Tags", strings.Join(s.tags, ", "), colPurple))
-	}
 	lines = append(lines,
 		key("Created", fmtDate(s.created), colFg),
 	)
