@@ -162,6 +162,11 @@ type rootModel struct {
 	instConfirmServerID   string
 	instConfirmServerName string
 	instConfirmServerZone string
+	// privateIPs caches resolved private NIC IPs (IPAM) for routed-IP servers,
+	// keyed by server ID. privateIPLoadingID is the server whose private IP is
+	// currently being resolved ("" = none in flight).
+	privateIPs         map[string]string
+	privateIPLoadingID string
 
 	// Registry state
 	registryCursor    int
@@ -535,9 +540,13 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case serversMsg:
 		m.servers = msg.servers
 		m.loading = false
-		// Keep polling while any server is transitioning (starting/stopping).
-		if m.state == stateDashboard && m.activeService == serviceInstance && hasTransientServer(m.servers) {
-			return m, pollServersAfterDelay()
+		if m.state == stateDashboard && m.activeService == serviceInstance {
+			// Keep polling while any server is transitioning (starting/stopping).
+			if hasTransientServer(m.servers) {
+				return m, pollServersAfterDelay()
+			}
+			// Resolve the selected server's private IP (routed-IP servers).
+			return m, m.selectedServerPrivateIPCmd()
 		}
 		return m, nil
 
@@ -551,6 +560,16 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case serverActionDoneMsg:
 		m.loading = true
 		return m, tea.Batch(m.spin.Tick, m.fetchServers())
+
+	case serverPrivateIPMsg:
+		m.privateIPLoadingID = ""
+		if msg.ip != "" {
+			if m.privateIPs == nil {
+				m.privateIPs = make(map[string]string)
+			}
+			m.privateIPs[msg.serverID] = msg.ip
+		}
+		return m, nil
 
 	case secretVersionsMsg:
 		m.loading = false
@@ -656,7 +675,8 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// projectID not found in list — fall back to first project name.
 			m.project = msg.projects[0].name
 		}
-		return m, m.maybeCalculateSize()
+		// Also kick off the private-IP resolution for the first server.
+		return m, tea.Batch(m.maybeCalculateSize(), m.selectedServerPrivateIPCmd())
 
 	case sizeMsg:
 		for i := range m.buckets {

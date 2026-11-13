@@ -1364,6 +1364,7 @@ func (m rootModel) handleUp() (rootModel, tea.Cmd) {
 				if m.instCursor < m.instScrollY {
 					m.instScrollY = m.instCursor
 				}
+				return m, m.selectedServerPrivateIPCmd()
 			}
 		}
 		fb := m.filteredBuckets()
@@ -1478,6 +1479,7 @@ func (m rootModel) handleDown() (rootModel, tea.Cmd) {
 			fs := m.filteredServers()
 			if len(fs) > 0 && m.instCursor < len(fs)-1 {
 				m.instCursor++
+				return m, m.selectedServerPrivateIPCmd()
 			}
 		}
 		fb := m.filteredBuckets()

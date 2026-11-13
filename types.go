@@ -70,7 +70,8 @@ type instanceServer struct {
 	commercialType string // e.g. "GP1-M"
 	zone           string // e.g. "fr-par-1"
 	publicIP       string
-	privateIP      string
+	privateIP      string // set for pre-routed-IP servers; empty for routed-IP servers
+	ipamIPIDs      []string // IPAM IDs of the server's private NIC IPs (routed-IP servers)
 	protected      bool
 	tags           []string
 	created        time.Time
@@ -348,6 +349,13 @@ type serverActionDoneMsg struct{}
 // serverPollTickMsg fires every few seconds while any server is in a
 // transient state, mirroring the K8s node polling.
 type serverPollTickMsg struct{}
+
+// serverPrivateIPMsg carries the resolved private IP for one server (looked
+// up via IPAM for routed-IP servers). ip is "" when no IPv4 could be found.
+type serverPrivateIPMsg struct {
+	serverID string
+	ip       string
+}
 
 type errMsg struct{ err error }
 
