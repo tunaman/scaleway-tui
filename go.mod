@@ -1,6 +1,6 @@
 module scw-tui
 
-go 1.26.7
+go 1.26.11
 
 require (
 	charm.land/bubbles/v2 v2.2.1

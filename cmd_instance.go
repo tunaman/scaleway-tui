@@ -67,7 +67,7 @@ func (m rootModel) listServersAllZones() ([]instanceServer, error) {
 					break // try the remaining zone/state combos
 				}
 				zoneServers = append(zoneServers, resp.Servers...)
-				if uint32(len(zoneServers)) >= resp.TotalCount {
+				if len(zoneServers) >= int(resp.TotalCount) {
 					break
 				}
 				page++

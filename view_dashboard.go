@@ -832,7 +832,7 @@ func (m rootModel) renderRegistry(totalW, height int, borderColor color.Color) s
 		if ns.isPublic {
 			vis = "public"
 		}
-		sizeStr := formatBytes(int64(ns.sizeBytes))
+		sizeStr := formatBytes(int64(ns.sizeBytes)) // #nosec G115 -- namespace sizes are far below MaxInt64
 		imagesStr := fmt.Sprintf("%d", ns.imageCount)
 
 		var nameStr string
