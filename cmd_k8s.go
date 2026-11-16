@@ -168,3 +168,18 @@ func (m rootModel) rebootNode(nodeID, region string) tea.Cmd {
 		return k8sNodeRebootedMsg{}
 	}
 }
+
+// fetchKubeConfig downloads the kubeconfig for a cluster.
+func (m rootModel) fetchKubeConfig(cl cluster) tea.Cmd {
+	return func() tea.Msg {
+		k8sAPI := k8s.NewAPI(m.scwClient)
+		resp, err := k8sAPI.GetClusterKubeConfig(&k8s.GetClusterKubeConfigRequest{
+			Region:    scw.Region(cl.region),
+			ClusterID: cl.id,
+		})
+		if err != nil {
+			return errMsg{fmt.Errorf("get kubeconfig: %w", err)}
+		}
+		return kubeConfigMsg{yaml: string(resp.GetRaw())}
+	}
+}

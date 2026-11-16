@@ -537,6 +537,12 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case kubeConfigMsg:
+		m.loading = false
+		// The kubeconfig is a file, not something to read in the TUI — copy
+		// it straight to the clipboard (top bar flashes "Copied → clipboard").
+		return m.copyToClipboard(msg.yaml)
+
 	case serversMsg:
 		m.servers = msg.servers
 		m.loading = false

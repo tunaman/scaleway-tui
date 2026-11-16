@@ -1035,6 +1035,13 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				m.input.errStr = ""
 			}
 		}
+	case "K":
+		// K8s browser: fetch the cluster kubeconfig and copy it to the
+		// clipboard (top bar flashes "Copied → clipboard").
+		if m.state == stateK8sBrowser && !m.loading && !m.k8sConfirmReboot && !m.k8sConfirmReplace {
+			m.loading = true
+			return m, tea.Batch(m.spin.Tick, m.fetchKubeConfig(m.k8sBrowserCluster))
+		}
 	case "tab":
 		if m.state == stateIAMBrowser && !m.loading {
 			m.iamTab = (m.iamTab + 1) % iamTabCount
