@@ -513,13 +513,26 @@ func (m rootModel) renderServers(totalW, height int, borderColor color.Color) st
 	listW := totalW - detailPaneWidth - 1
 	const scrollW = 1
 	const prefixW = 2
-	const typeW = 9
-	const ipW = 15
+	const colGap = 2
 	const stateW = 10
+	// Size TYPE and IP to their widest value (over all servers, so the layout
+	// doesn't jump while filtering), plus a gap so columns never touch.
+	typeW := lipgloss.Width("TYPE")
+	ipW := lipgloss.Width("IP")
+	for _, s := range m.servers {
+		typeW = max(typeW, lipgloss.Width(s.commercialType))
+		ipW = max(ipW, lipgloss.Width(s.publicIP))
+	}
+	typeW += colGap
+	ipW += colGap
 	nameW := listW - 2 - prefixW - typeW - ipW - stateW - scrollW
 	if nameW < 10 {
 		nameW = 10
 	}
+	// Column text widths keep a trailing gap so a truncated value ("…") never
+	// runs into the next column.
+	nameTxt, typeTxt, ipTxt := nameW-colGap, typeW-colGap, ipW-colGap
+	col := func(v string, txt, w int) string { return padRight(padRight(v, txt), w) }
 
 	visible := m.filteredServers()
 	listH := max(1, height-listRowOverhead)
@@ -572,13 +585,11 @@ func (m rootModel) renderServers(totalW, height int, borderColor color.Color) st
 		stateStr := serverStatusShort(s.status)
 		stateColored := lipgloss.NewStyle().Foreground(serverStatusColor(s.status)).Render(padRight(stateStr, stateW))
 
-		cols := padRight(s.name, nameW) +
-			padRight(s.commercialType, typeW) +
-			padRight(ipStr, ipW)
+		cols := col(s.name, nameTxt, nameW) +
+			col(s.commercialType, typeTxt, typeW) +
+			col(ipStr, ipTxt, ipW)
 		if i == m.instCursor {
-			plainCols := padRight(s.name, nameW) +
-				padRight(s.commercialType, typeW) +
-				padRight(ipStr, ipW) +
+			plainCols := cols +
 				padRight(stateStr, stateW)
 			rows = append(rows, lipgloss.NewStyle().
 				Background(colBg3).Foreground(colFg).Bold(true).
