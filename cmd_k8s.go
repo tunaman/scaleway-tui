@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -169,7 +171,56 @@ func (m rootModel) rebootNode(nodeID, region string) tea.Cmd {
 	}
 }
 
-// fetchKubeConfig downloads the kubeconfig for a cluster.
+// kubeConfigFileName returns the file name the kubeconfig of a cluster is saved
+// under: "scw-<cluster name>.yaml", with anything outside [A-Za-z0-9._-]
+// replaced so the name is always a single safe path segment.
+func kubeConfigFileName(clusterName string) string {
+	name := strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '.', r == '_', r == '-':
+			return r
+		}
+		return '-'
+	}, clusterName)
+	name = strings.Trim(name, ".-")
+	if name == "" {
+		name = "cluster"
+	}
+	return "scw-" + name + ".yaml"
+}
+
+// saveKubeConfig writes the kubeconfig into dir (created 0700 if missing) as
+// a 0600 file, via a temp file + rename so a failed write never leaves a
+// half-written config behind. It returns the full path written.
+func saveKubeConfig(dir, clusterName string, data []byte) (string, error) {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	path := filepath.Join(dir, kubeConfigFileName(clusterName))
+	tmp, err := os.CreateTemp(dir, ".scw-kubeconfig-*")
+	if err != nil {
+		return "", err
+	}
+	defer os.Remove(tmp.Name()) //nolint:errcheck // no-op after a successful rename
+	if err := tmp.Chmod(0o600); err != nil {
+		tmp.Close() //nolint:errcheck,gosec // already failing
+		return "", err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close() //nolint:errcheck,gosec // already failing
+		return "", err
+	}
+	if err := tmp.Close(); err != nil {
+		return "", err
+	}
+	if err := os.Rename(tmp.Name(), path); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+// fetchKubeConfig downloads the kubeconfig for a cluster and saves it to
+// ~/.kube/scw-<cluster>.yaml (never touching ~/.kube/config).
 func (m rootModel) fetchKubeConfig(cl cluster) tea.Cmd {
 	return func() tea.Msg {
 		k8sAPI := k8s.NewAPI(m.scwClient)
@@ -180,6 +231,14 @@ func (m rootModel) fetchKubeConfig(cl cluster) tea.Cmd {
 		if err != nil {
 			return errMsg{fmt.Errorf("get kubeconfig: %w", err)}
 		}
-		return kubeConfigMsg{yaml: string(resp.GetRaw())}
+		raw := resp.GetRaw()
+		if len(raw) == 0 {
+			return errMsg{fmt.Errorf("get kubeconfig: empty response")}
+		}
+		path, err := saveKubeConfig(expandHome("~/.kube"), cl.name, raw)
+		if err != nil {
+			return errMsg{fmt.Errorf("save kubeconfig: %w", err)}
+		}
+		return kubeConfigMsg{path: path}
 	}
 }

@@ -539,9 +539,10 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case kubeConfigMsg:
 		m.loading = false
-		// The kubeconfig is a file, not something to read in the TUI — copy
-		// it straight to the clipboard (top bar flashes "Copied → clipboard").
-		return m.copyToClipboard(msg.yaml)
+		// Saved to disk rather than copied via OSC 52: a whole kubeconfig is
+		// far larger than most terminals accept in a clipboard sequence, so
+		// the copy was silently dropped. Flash the path in the top bar.
+		return m.flashNote("Saved → "+tildePath(msg.path), kubeConfigNoteDuration)
 
 	case serversMsg:
 		m.servers = msg.servers

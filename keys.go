@@ -1036,8 +1036,8 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case "K":
-		// K8s browser: fetch the cluster kubeconfig and copy it to the
-		// clipboard (top bar flashes "Copied → clipboard").
+		// K8s browser: fetch the cluster kubeconfig and save it to
+		// ~/.kube/scw-<cluster>.yaml (top bar flashes the saved path).
 		if m.state == stateK8sBrowser && !m.loading && !m.k8sConfirmReboot && !m.k8sConfirmReplace {
 			m.loading = true
 			return m, tea.Batch(m.spin.Tick, m.fetchKubeConfig(m.k8sBrowserCluster))
@@ -1615,14 +1615,20 @@ func (m rootModel) handleEnter() (rootModel, tea.Cmd) {
 // Terminals without OSC 52 support (e.g. stock xterm) simply ignore the
 // sequence — the UI degrades to no copy, no error.
 func (m rootModel) copyToClipboard(text string) (rootModel, tea.Cmd) {
-	m.clipboardNote = "Copied → clipboard"
-	return m, tea.Batch(
-		tea.SetClipboard(text),
-		tea.Tick(clipboardNoteDuration, func(time.Time) tea.Msg { return clipboardNoteClearedMsg{} }),
-	)
+	m, clear := m.flashNote("Copied → clipboard", clipboardNoteDuration)
+	return m, tea.Batch(tea.SetClipboard(text), clear)
 }
 
-const clipboardNoteDuration = 2 * time.Second
+// flashNote shows a green "✓ <note>" in the top bar for d.
+func (m rootModel) flashNote(note string, d time.Duration) (rootModel, tea.Cmd) {
+	m.clipboardNote = note
+	return m, tea.Tick(d, func(time.Time) tea.Msg { return clipboardNoteClearedMsg{} })
+}
+
+const (
+	clipboardNoteDuration  = 2 * time.Second
+	kubeConfigNoteDuration = 5 * time.Second // long enough to read the path
+)
 
 // ─────────────────────────────────────────────
 // Profile activation (Cmd)

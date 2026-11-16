@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -94,20 +96,49 @@ func TestK8sKubeconfigKey(t *testing.T) {
 	}
 }
 
-// TestKubeConfigMsgCopiesToClipboard verifies the fetched kubeconfig is copied
-// to the clipboard and the loading state is cleared.
-func TestKubeConfigMsgCopiesToClipboard(t *testing.T) {
+// TestKubeConfigMsgShowsSavedPath verifies the saved kubeconfig path is
+// flashed in the top bar and the loading state is cleared.
+func TestKubeConfigMsgShowsSavedPath(t *testing.T) {
 	m := rootModel{loading: true}
-	out, cmd := m.Update(kubeConfigMsg{yaml: "apiVersion: v1\nkind: Config\n"})
+	out, cmd := m.Update(kubeConfigMsg{path: "/tmp/kube/scw-prod.yaml"})
 	m = out.(rootModel)
 	if m.loading {
 		t.Error("loading should be cleared after the kubeconfig fetch")
 	}
-	if m.clipboardNote != "Copied → clipboard" {
-		t.Errorf("clipboardNote = %q, want the copy flash", m.clipboardNote)
+	if m.clipboardNote != "Saved → /tmp/kube/scw-prod.yaml" {
+		t.Errorf("clipboardNote = %q, want the saved-path flash", m.clipboardNote)
 	}
 	if cmd == nil {
-		t.Fatal("expected a clipboard cmd")
+		t.Fatal("expected a note-clear cmd")
+	}
+}
+
+// TestSaveKubeConfig verifies the file is written 0600 under a sanitized name,
+// the directory is created, and a re-save overwrites cleanly.
+func TestSaveKubeConfig(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), ".kube")
+	path, err := saveKubeConfig(dir, "prod/../cluster 1", []byte("v1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(dir, "scw-prod-..-cluster-1.yaml"); path != want {
+		t.Errorf("path = %q, want %q", path, want)
+	}
+	if _, err := saveKubeConfig(dir, "prod/../cluster 1", []byte("v2")); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(path) //nolint:gosec // test temp dir
+	if err != nil || string(got) != "v2" {
+		t.Errorf("content = %q (%v), want v2", got, err)
+	}
+	if fi, _ := os.Stat(path); fi.Mode().Perm() != 0o600 {
+		t.Errorf("mode = %v, want 0600", fi.Mode().Perm())
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
+		t.Errorf("expected only the kubeconfig in %s, got %d entries", dir, len(entries))
+	}
+	if got := kubeConfigFileName("..."); got != "scw-cluster.yaml" {
+		t.Errorf("empty-name fallback = %q", got)
 	}
 }
 

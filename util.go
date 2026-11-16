@@ -195,6 +195,20 @@ func parentPrefix(prefix string) string {
 
 // expandHome replaces a leading "~" in a local path with the user's home
 // directory (e.g. "~/Downloads" → "/home/user/Downloads").
+// tildePath is the inverse of expandHome: it shortens a path under the home
+// directory to "~/…" for display.
+func tildePath(p string) string {
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		if p == home {
+			return "~"
+		}
+		if strings.HasPrefix(p, home+string(os.PathSeparator)) {
+			return "~" + p[len(home):]
+		}
+	}
+	return p
+}
+
 func expandHome(p string) string {
 	if p == "~" || strings.HasPrefix(p, "~/") {
 		if home, err := os.UserHomeDir(); err == nil {
