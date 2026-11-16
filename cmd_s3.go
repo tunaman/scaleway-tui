@@ -313,7 +313,7 @@ func (m rootModel) uploadFile(bucket, prefix, localPath string) tea.Cmd {
 	// The cmd fires a goroutine and returns nil immediately.
 	// All progress and completion signals arrive via teaProgram.Send().
 	return func() tea.Msg {
-		f, err := os.Open(localPath)
+		f, err := os.Open(localPath) // #nosec G304 -- the user picks the file to upload
 		if err != nil {
 			return errMsg{fmt.Errorf("open file: %w", err)}
 		}
@@ -432,7 +432,7 @@ func (m rootModel) deleteEntries(bucket, prefix string, entries []bucketEntry) t
 func (m rootModel) downloadFiles(bucket, prefix string, entries []bucketEntry, destDir string) tea.Cmd {
 	return func() tea.Msg {
 		dir := expandHome(destDir)
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		if err := os.MkdirAll(dir, 0o750); err != nil {
 			return errMsg{fmt.Errorf("create download dir: %w", err)}
 		}
 		mc := m.minioClient
@@ -491,11 +491,11 @@ func downloadOne(mc *minio.Client, bucket, key, dest string, total int64, report
 	}
 	defer func() { _ = obj.Close() }()
 
-	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(dest), 0o750); err != nil {
 		return fmt.Errorf("create directory for %s: %w", key, err)
 	}
 	tmp := dest + ".part"
-	f, err := os.Create(tmp)
+	f, err := os.Create(tmp) // #nosec G304 -- dest is inside the download dir, see safeRelPath
 	if err != nil {
 		return fmt.Errorf("create %s: %w", tmp, err)
 	}

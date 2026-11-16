@@ -234,7 +234,7 @@ func (m rootModel) exportBillingCSV(from, to string) tea.Cmd {
 		safeName := strings.NewReplacer(" ", "-", "/", "-").Replace(strings.ToLower(projectName))
 		fname := fmt.Sprintf("scw-tui-export-%s-%s-%s.csv", safeName, from, to)
 		path := filepath.Join(home, fname)
-		f, err := os.Create(path)
+		f, err := os.Create(path) // #nosec G304 -- fixed file name in the home dir
 		if err != nil {
 			return errMsg{fmt.Errorf("create csv: %w", err)}
 		}

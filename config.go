@@ -35,7 +35,7 @@ func loadTUIConfig() tuiConfig {
 	if err != nil {
 		return tuiConfig{}
 	}
-	data, err := os.ReadFile(filepath.Join(home, ".config", "scw-tui", "config.json"))
+	data, err := os.ReadFile(filepath.Join(home, ".config", "scw-tui", "config.json")) // #nosec G304 -- fixed path under the home dir
 	if err != nil {
 		return tuiConfig{}
 	}

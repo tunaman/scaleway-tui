@@ -146,7 +146,7 @@ func (m rootModel) drawRegistryBrowser() string {
 			statusColor = colYellow
 		}
 
-		sizeStr := formatBytes(int64(img.sizeBytes))
+		sizeStr := formatBytes(int64(img.sizeBytes)) // #nosec G115 -- image sizes are far below MaxInt64
 		modStr := ""
 		if !img.updatedAt.IsZero() {
 			modStr = img.updatedAt.Format("2006-01-02")
