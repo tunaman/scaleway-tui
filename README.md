@@ -17,7 +17,7 @@ A keyboard-driven terminal UI for managing your [Scaleway](https://www.scaleway.
 - **Multi-profile support** — pick any profile from your existing `~/.config/scw/config.yaml`
 - **Instances browser** — list all servers across every zone of the region with type, IP, and state; power on, power off, and reboot (with confirmation); detail pane with volumes and IPs (private IPs of routed-IP servers are resolved live via the IPAM API)
 - **Object Storage browser** — navigate buckets and folders, view object sizes, upload, download one or more selected files to a local directory, create folders/buckets, and delete objects
-- **Kubernetes cluster browser** — list Kapsule clusters, browse node pools (autoscaling, node type, zone, volume), view nodes with status, reboot/replace nodes, and copy the cluster kubeconfig to the clipboard
+- **Kubernetes cluster browser** — list Kapsule clusters, browse node pools (autoscaling, node type, zone, volume), view nodes with status, reboot/replace nodes, and download the cluster kubeconfig to `~/.kube/scw-<cluster>.yaml`
 - **Container Registry browser** — browse namespaces, images, and tags; copy pull commands
 - **Secrets Manager** — list secrets, browse versions, view secret content, add new versions, and update version descriptions
 - **IAM browser** — read-only, organization-scoped view with tabs for Users, Applications, Groups, Policies, API keys, and Logs; filter within any tab
@@ -118,7 +118,7 @@ On first launch you will be presented with a profile picker. Select a profile an
 | `Tab` | Switch between node pools and nodes panes |
 | `j` / `k` | Navigate rows |
 | `R` | Reboot selected node (with confirmation) |
-| `K` | Copy the cluster kubeconfig to the clipboard |
+| `K` | Save the cluster kubeconfig to `~/.kube/scw-<cluster>.yaml` (use with `KUBECONFIG=` or `--kubeconfig`) |
 | `C` | Copy the selected node's public IP to the clipboard (nodes pane) |
 | `F5` | Refresh |
 | `Esc` | Back |
