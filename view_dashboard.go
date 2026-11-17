@@ -515,23 +515,26 @@ func (m rootModel) renderServers(totalW, height int, borderColor color.Color) st
 	const prefixW = 2
 	const colGap = 2
 	const stateW = 10
-	// Size TYPE and IP to their widest value (over all servers, so the layout
-	// doesn't jump while filtering), plus a gap so columns never touch.
+	// Size AZ, TYPE and IP to their widest value (over all servers, so the
+	// layout doesn't jump while filtering), plus a gap so columns never touch.
+	azW := lipgloss.Width("AZ")
 	typeW := lipgloss.Width("TYPE")
 	ipW := lipgloss.Width("IP")
 	for _, s := range m.servers {
+		azW = max(azW, lipgloss.Width(s.zone))
 		typeW = max(typeW, lipgloss.Width(s.commercialType))
 		ipW = max(ipW, lipgloss.Width(s.publicIP))
 	}
+	azW += colGap
 	typeW += colGap
 	ipW += colGap
-	nameW := listW - 2 - prefixW - typeW - ipW - stateW - scrollW
+	nameW := listW - 2 - prefixW - azW - typeW - ipW - stateW - scrollW
 	if nameW < 10 {
 		nameW = 10
 	}
 	// Column text widths keep a trailing gap so a truncated value ("…") never
 	// runs into the next column.
-	nameTxt, typeTxt, ipTxt := nameW-colGap, typeW-colGap, ipW-colGap
+	nameTxt, azTxt, typeTxt, ipTxt := nameW-colGap, azW-colGap, typeW-colGap, ipW-colGap
 	col := func(v string, txt, w int) string { return padRight(padRight(v, txt), w) }
 
 	visible := m.filteredServers()
@@ -586,6 +589,7 @@ func (m rootModel) renderServers(totalW, height int, borderColor color.Color) st
 		stateColored := lipgloss.NewStyle().Foreground(serverStatusColor(s.status)).Render(padRight(stateStr, stateW))
 
 		cols := col(s.name, nameTxt, nameW) +
+			col(s.zone, azTxt, azW) +
 			col(s.commercialType, typeTxt, typeW) +
 			col(ipStr, ipTxt, ipW)
 		if i == m.instCursor {
@@ -611,7 +615,7 @@ func (m rootModel) renderServers(totalW, height int, borderColor color.Color) st
 			lipgloss.NewStyle().Foreground(colComment).Faint(true).Render("  Esc to clear")
 	default:
 		header = "  " + lipgloss.NewStyle().Foreground(colComment).Bold(true).Render(
-			padRight("NAME", nameW)+padRight("TYPE", typeW)+padRight("IP", ipW)+padRight("STATE", stateW),
+			padRight("NAME", nameW)+padRight("AZ", azW)+padRight("TYPE", typeW)+padRight("IP", ipW)+padRight("STATE", stateW),
 		)
 	}
 
