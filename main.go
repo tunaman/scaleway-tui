@@ -46,6 +46,7 @@ const (
 	serviceRegistry
 	serviceSecrets
 	serviceIAM
+	serviceVolumes
 	serviceCount
 )
 
@@ -271,6 +272,26 @@ type rootModel struct {
 	iamFilter       string
 	iamFiltering    bool
 	iamNames        map[string]string // IAM resource ID → display name (users/apps/groups)
+
+	// Volumes & snapshots (dashboard) state
+	volumes            []volumeItem
+	snapshots          []snapshotItem
+	volFocus           int // 0 = volumes pane, 1 = snapshots pane
+	volCursor          int
+	volScrollY         int
+	volSnapCursor      int
+	volSnapScrollY     int
+	volFilter          string
+	volFiltering       bool
+	volConfirmAction   int // volActionNone / DeleteVolume / DeleteSnapshot / Attach / Detach
+	volConfirmID       string
+	volConfirmName     string
+	volConfirmServerID   string
+	volConfirmServerName string
+	volAttachOverlay   bool
+	volAttachCursor    int
+	volAttachVolume    volumeItem // volume awaiting a server pick for attach
+	snapTarget         volumeItem // volume the pending snapshot-name input is for
 
 	// Clients (nil until a profile is activated)
 	minioClient    *minio.Client
@@ -578,6 +599,29 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case volumesMsg:
+		m.volumes = msg.volumes
+		m.snapshots = msg.snapshots
+		m.loading = false
+		// Keep polling while a snapshot is being taken or a volume is
+		// transitioning (creating/attaching/...), like the server list.
+		if m.state == stateDashboard && m.activeService == serviceVolumes &&
+			hasTransientVolume(m.volumes, m.snapshots) {
+			return m, pollVolumesAfterDelay()
+		}
+		return m, nil
+
+	case volumePollTickMsg:
+		// Only poll while the Volumes & Snapshots list is on screen.
+		if m.state == stateDashboard && m.activeService == serviceVolumes {
+			return m, m.fetchVolumes()
+		}
+		return m, nil
+
+	case snapshotCreatedMsg, snapshotDeletedMsg, volumeDeletedMsg, volumeAttachedMsg, volumeDetachedMsg:
+		m.loading = true
+		return m, tea.Batch(m.spin.Tick, m.fetchVolumes())
+
 	case secretVersionsMsg:
 		m.loading = false
 		m.secBrowserSecret = msg.secret
@@ -660,6 +704,8 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.registryNamespaces = msg.registryNamespaces
 		m.secrets = msg.secrets
 		m.servers = msg.servers
+		m.volumes = msg.volumes
+		m.snapshots = msg.snapshots
 		m.bucketCursor = 0
 		m.bucketScrollY = 0
 		m.bucketScrollX = 0
@@ -683,7 +729,11 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.project = msg.projects[0].name
 		}
 		// Also kick off the private-IP resolution for the first server.
-		return m, tea.Batch(m.maybeCalculateSize(), m.selectedServerPrivateIPCmd())
+		cmds := []tea.Cmd{m.maybeCalculateSize(), m.selectedServerPrivateIPCmd()}
+		if hasTransientVolume(m.volumes, m.snapshots) {
+			cmds = append(cmds, pollVolumesAfterDelay())
+		}
+		return m, tea.Batch(cmds...)
 
 	case sizeMsg:
 		for i := range m.buckets {
@@ -757,6 +807,12 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.instFilter += msg.Content
 			m.instCursor = 0
 			m.instScrollY = 0
+		} else if m.volFiltering {
+			m.volFilter += msg.Content
+			m.volCursor = 0
+			m.volScrollY = 0
+			m.volSnapCursor = 0
+			m.volSnapScrollY = 0
 		}
 		return m, nil
 

@@ -17,7 +17,7 @@ golangci-lint run
 ./bin/scw-tui
 ```
 
-There are render/behavior tests in `view_instance_test.go`, `s3_download_test.go`, and `clipboard_test.go` (`go test .`).
+There are render/behavior tests in `view_instance_test.go`, `view_volumes_test.go`, `s3_download_test.go`, and `clipboard_test.go` (`go test .`).
 
 ## Architecture
 
@@ -33,6 +33,7 @@ The codebase is a single Go package (`package main`) split across these files:
 | `util.go` | `panelBox`, `padRight`, `renderVScrollBar`, `formatBytes`, `formatEuroShort`, `parentPrefix`, `expandHome`, `safeRelPath`, `prevMonth`, `nextMonth`, `moneyToFloat`, `min`, `max` |
 | `cmd_s3.go` | `fetchData`, `calculateSize`, `fetchBucketContents`, `createBucket/Folder`, `uploadFile`, `downloadFiles` (multi-file, `.part` temp + rename), `deleteEntries`, `progressReader` |
 | `cmd_instance.go` | `listServersAllZones` (all zones × all states of the region), `serverFromSDK` (collects `ipamIPIDs` from `PrivateNics`), `fetchServers`, `powerServer`, `pollServersAfterDelay`, `regionZones`, `fetchServerPrivateIP` + `selectedServerPrivateIPCmd` (lazy IPAM private-IP resolution) |
+| `cmd_volumes.go` | `listVolumesAllZones` + `listZoneVolumes` (all zones, project-filtered; failing zones skipped like servers), `volumeFromSDK`/`snapshotFromSDK`, `hasTransientVolume` (poll trigger), `fetchVolumes`, `pollVolumesAfterDelay`, `createSnapshot`, `deleteSnapshot`, `deleteVolume`, `attachVolume`, `detachVolume` |
 | `cmd_k8s.go` | `fetchNodePools` (annotates each pool with node-type stock via `fetchServerTypesAvailability`), `fetchNodes`, `rebootNode`, `replaceNode`, `fetchKubeConfig` + `saveKubeConfig` (raw YAML via `GetClusterKubeConfig`, written 0600 to `~/.kube/scw-<cluster>.yaml`) |
 | `cmd_registry.go` | `fetchRegistryImages/Tags`, `deleteRegistryTags` |
 | `cmd_billing.go` | `fetchBillingOverview`, `fetchConsumptionDetail` (aggregates by category+product), `exportBillingCSV` (date-range, project-filtered) |
@@ -41,6 +42,7 @@ The codebase is a single Go package (`package main`) split across these files:
 | `view_k8s.go` | `drawK8sBrowser`, `renderK8sPoolPane` (incl. STOCK column), `renderK8sNodePane`, `renderK8sRebootConfirm/ReplaceConfirm` (warn when the pool's node type is scarce or out of stock) |
 | `view_picker.go` | `drawProfilePicker` |
 | `view_dashboard.go` | `drawDashboard`, `renderTopBar/StatusBar/Nav/Content`, `renderServers/ServerDetail` (Instances, incl. power-action confirm dialog), `renderBuckets/Clusters/Registry/Secrets/BillingPreview` |
+| `view_volumes.go` | `renderVolumes` (volumes/snapshots panes + detail), `renderVolumeDetail`/`renderSnapshotDetail`, `volumeStateColor`, `renderVolumeConfirm` (delete/attach/detach), `renderVolumeAttachOverlay` + `attachServersInZone` (server picker for the volume's zone) |
 | `view_input.go` | `renderInputOverlay` — shared input dialog for all input modes |
 | `view_s3.go` | `drawObjectBrowser`, browser render helpers, `renderConfirmDialog/UploadProgress/DownloadProgress` |
 | `view_registry.go` | `drawRegistryBrowser`, `renderRegistryVersionPane`, `registryPullCommand` (shared by pull overlay + copy action), tag action/delete overlays |
@@ -65,6 +67,8 @@ The IAM browser (`stateIAMBrowser`) is read-only and organization-scoped. It has
 
 The Instances service (`serviceInstance`) is a dashboard-level view only — no dedicated `state` constant. It renders a server list + SERVER INFO detail pane (`renderServers`) with power actions (`O`/`S`/`R`) that set `m.instConfirmAction` and show a confirm dialog; after a successful action the list refetches and polls every 3s while any server is `starting`/`stopping` (`serverPollTickMsg`).
 
+The Volumes & Snapshots service (`serviceVolumes`) is also dashboard-level only. It renders a list pane + detail pane (`renderVolumes`); `←`/`→` switch the pane (`m.volFocus` 0 = volumes, 1 = snapshots) with per-pane cursors. Data loads eagerly in `fetchData` (like servers) and `F5` refetches via `fetchVolumes`. Actions: `S` snapshots the selected volume (input overlay, name pre-filled by `defaultSnapshotName`), `A` opens the attach server picker (servers in the volume's zone only), `X` detaches, `D` deletes (snapshots always; volumes only when unattached) — all mutating actions go through `m.volConfirmAction` + `renderVolumeConfirm` first. The list polls every 3s while `hasTransientVolume` is true (snapshotting/attaching/resizing/... states).
+
 **Private IPs (IPAM):** modern routed-IP servers carry no private address on the NIC — only `ipam_ip_ids` (collected into `instanceServer.ipamIPIDs` by `serverFromSDK`). The address is resolved lazily via the IPAM API: `selectedServerPrivateIPCmd()` fires `fetchServerPrivateIP` for the currently selected server (first IPv4 of its NIC IPs) when it isn't already cached in `m.privateIPs` or in flight (`m.privateIPLoadingID`). It is triggered on initial load (`dataMsg`/`serversMsg`) and on every cursor move in the Instances list. The detail pane shows the resolved address, a faint "Resolving…" while in flight, or "—" otherwise. Best-effort: a lookup failure just leaves "—".
 
 `View()` dispatches to a `draw*()` function based on the current `state`. `handleKey()` is the central keyboard dispatcher; it delegates to `handleUp()`, `handleDown()`, `handleEnter()`, `handleEsc()` which each contain state-specific logic.
@@ -83,6 +87,9 @@ All blocking work (API calls, file uploads) uses `tea.Cmd` closures that return 
 - `serverActionDoneMsg` — power action accepted; triggers `fetchServers()`
 - `serverPollTickMsg` — periodic refresh while a server is starting/stopping
 - `serverPrivateIPMsg` — one server's IPAM-resolved private IP ("" when none found)
+- `volumesMsg` — volumes + snapshots lists loaded (all zones of the region)
+- `volumePollTickMsg` — periodic refresh while a volume/snapshot is in a transient state
+- `snapshotCreatedMsg` / `snapshotDeletedMsg` / `volumeDeletedMsg` / `volumeAttachedMsg` / `volumeDetachedMsg` — action done; all trigger a `fetchVolumes()` refetch
 - `iamDataMsg` — all six IAM lists loaded (sets `stateIAMBrowser`, builds the ID→name map)
 - `clipboardNoteClearedMsg` — clears the "Copied → clipboard" top-bar note after `clipboardNoteDuration`
 - `errMsg` — any async error
@@ -105,6 +112,8 @@ Overlays are rendered conditionally in `View()` on top of the base content using
 - `m.instConfirmAction != instActionNone` — server power-action confirmation dialog (`view_dashboard.go`); `O`/`S`/`R` keys
 - `m.billingProjectOverlay` — billing project picker (`view_billing.go`); `p/P` key
 - `m.billingExportOverlay` — billing CSV export date-range picker (`view_billing.go`); `e/E` key
+- `m.volConfirmAction != volActionNone` — volume/snapshot delete/attach/detach confirmation (`view_volumes.go`); `D`/`X`/`A` keys
+- `m.volAttachOverlay` — attach server picker, servers in the volume's zone (`view_volumes.go`); `A` key
 
 ### Client Initialization
 `buildClients()` constructs both `scwClient` and `minioClient` from a named Scaleway profile loaded via `scw.LoadConfig()`. Clients are stored in `rootModel` and captured by closure in async commands.
