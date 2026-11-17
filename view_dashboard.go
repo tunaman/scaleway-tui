@@ -60,6 +60,12 @@ func (m rootModel) drawDashboard() string {
 	if m.secConfirmDelete {
 		return m.renderSecretDeleteConfirm(base)
 	}
+	if m.volConfirmAction != volActionNone {
+		return m.renderVolumeConfirm(base)
+	}
+	if m.volAttachOverlay {
+		return m.renderVolumeAttachOverlay(base)
+	}
 	if m.billingProjectOverlay {
 		return m.renderBillingProjectOverlay()
 	}
@@ -88,7 +94,7 @@ func (m rootModel) renderTopBar() string {
 	// ── Left: breadcrumb ──
 	crumbs := []string{pill(m.project, colGreen)}
 
-	serviceNames := []string{"Instances", "Object Storage", "K8s Clusters", "Billing", "Container Registry", "Secrets Manager", "IAM"}
+	serviceNames := []string{"Instances", "Object Storage", "K8s Clusters", "Billing", "Container Registry", "Secrets Manager", "IAM", "Volumes & Snapshots"}
 	switch m.state {
 	case stateObjectBrowser:
 		crumbs = append(crumbs, sep, pill("Object Storage", colBlue))
@@ -153,6 +159,9 @@ func (m rootModel) renderTopBar() string {
 	if m.state == stateDashboard && m.activeService == serviceInstance {
 		rightInfo = comment(fmt.Sprintf("%d servers  ", len(m.servers)))
 	}
+	if m.state == stateDashboard && m.activeService == serviceVolumes {
+		rightInfo = comment(fmt.Sprintf("%d volumes / %d snapshots  ", len(m.volumes), len(m.snapshots)))
+	}
 	if m.clipboardNote != "" {
 		rightInfo = lipgloss.NewStyle().Foreground(colGreen).Bold(true).Render("✓ "+m.clipboardNote) + rightInfo
 	}
@@ -215,6 +224,19 @@ func (m rootModel) renderStatusBar() string {
 			hotkey("Esc", "Back"),
 			hotkey("Q", "Quit"),
 		)
+	case m.activeService == serviceVolumes && m.state == stateDashboard:
+		keys = lipgloss.JoinHorizontal(lipgloss.Top,
+			hotkey("↑↓", "Navigate"),
+			hotkey("←→", "Pane"),
+			hotkey("Tab", "Focus"),
+			hotkey("/", "Filter"),
+			hotkey("S", "Snapshot"),
+			hotkey("A", "Attach"),
+			hotkey("X", "Detach"),
+			hotkey("D", "Delete"),
+			hotkey("F5", "Refresh"),
+			hotkey("Q", "Quit"),
+		)
 	case m.activeService == serviceObjectStorage && m.state == stateDashboard:
 		keys = lipgloss.JoinHorizontal(lipgloss.Top,
 			hotkey("F5", "Refresh"),
@@ -260,6 +282,7 @@ func (m rootModel) renderNav(height int) string {
 		{"Container Registry"},
 		{"Secrets Manager"},
 		{"IAM"},
+		{"Volumes & Snaps"},
 	}
 
 	sectionHeader := lipgloss.NewStyle().Foreground(colComment).PaddingLeft(1).PaddingBottom(1).Render("SERVICES")
@@ -311,6 +334,8 @@ func (m rootModel) renderContent(height int) string {
 		return m.renderSecrets(contentW, height, focusColor)
 	case serviceIAM:
 		return m.renderIAMPreview(contentW, height, focusColor)
+	case serviceVolumes:
+		return m.renderVolumes(contentW, height, focusColor)
 	}
 	return ""
 }

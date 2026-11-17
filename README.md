@@ -21,6 +21,7 @@ A keyboard-driven terminal UI for managing your [Scaleway](https://www.scaleway.
 - **Container Registry browser** — browse namespaces, images, and tags; copy pull commands
 - **Secrets Manager** — list secrets, browse versions, view secret content, add new versions, and update version descriptions
 - **IAM browser** — read-only, organization-scoped view with tabs for Users, Applications, Groups, Policies, API keys, and Logs; filter within any tab
+- **Volumes & Snapshots** — list all volumes and snapshots across every zone of the region with type, size, state, and attached server; take snapshots (with auto-suggested name), delete snapshots or unattached volumes, and attach/detach volumes to servers (with confirmation)
 - **Billing view** — inspect current-period costs, filter by project, export date-range to CSV
 - **Project switcher** — switch between Scaleway projects without leaving the TUI
 - **Copy to clipboard** — copy server/node IPs, registry pull commands, secret values, S3 object keys, and API keys straight to your system clipboard via OSC 52 (supported by iTerm2, macOS Terminal, Windows Terminal, kitty, alacritty, foot, and most modern terminals)
@@ -141,6 +142,20 @@ On first launch you will be presented with a profile picker. Select a profile an
 | `C` | (in content viewer) Copy the secret value to the clipboard |
 | `n` | Add a new secret version |
 | `u` | Update description of selected version |
+
+#### Volumes & Snapshots
+
+| Key | Action |
+| ----- | -------- |
+| `←` / `→` | Switch between the volumes and snapshots panes |
+| `j` / `k` | Navigate rows |
+| `/` | Filter (name, type, state, zone, server/base volume) |
+| `S` | Snapshot the selected volume (asks for a name, pre-filled) |
+| `A` | Attach the selected (unattached) volume — pick a server in the same zone |
+| `X` | Detach the selected volume from its server (with confirmation) |
+| `D` | Delete the selected snapshot, or an unattached volume (with confirmation) |
+| `F5` | Refresh |
+| `Esc` | Clear filter / back |
 
 #### IAM
 

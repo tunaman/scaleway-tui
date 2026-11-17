@@ -29,6 +29,8 @@ func (m rootModel) fetchData() tea.Cmd {
 		var projects []projectItem
 		var registryNamespaces []registryNamespace
 		var servers []instanceServer
+		var volumes []volumeItem
+		var snapshots []snapshotItem
 
 		// ── Projects ──
 		// Try ListProjects first (requires org ID + permissions). Falls back to
@@ -115,6 +117,13 @@ func (m rootModel) fetchData() tea.Cmd {
 			servers = srvs
 		}
 
+		// ── Volumes & snapshots ──
+		// Non-fatal, same as the server list above.
+		if vols, snaps, err := m.listVolumesAllZones(); err == nil {
+			volumes = vols
+			snapshots = snaps
+		}
+
 		// ── Buckets ──
 		bkts, err := m.minioClient.ListBuckets(context.Background())
 		if err != nil {
@@ -195,7 +204,7 @@ func (m rootModel) fetchData() tea.Cmd {
 			sReq.Page = scw.Int32Ptr(sPage)
 		}
 
-		return dataMsg{buckets: buckets, clusters: clusters, projects: projects, registryNamespaces: registryNamespaces, secrets: secrets, servers: servers}
+		return dataMsg{buckets: buckets, clusters: clusters, projects: projects, registryNamespaces: registryNamespaces, secrets: secrets, servers: servers, volumes: volumes, snapshots: snapshots}
 	}
 }
 

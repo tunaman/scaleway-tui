@@ -85,6 +85,40 @@ type instanceVolume struct {
 	boot    bool
 }
 
+// volumeItem is one row in the Volumes list.
+type volumeItem struct {
+	id         string
+	name       string
+	size       uint64 // bytes
+	volType    string // "b_ssd", "l_ssd", ...
+	state      string // "available", "snapshotting", "attaching", ...
+	zone       string
+	serverName string // attached server's name ("" when not attached)
+	serverID   string
+	createdAt  time.Time
+}
+
+// snapshotItem is one row in the Snapshots list.
+type snapshotItem struct {
+	id         string
+	name       string
+	size       uint64 // bytes
+	volType    string
+	state      string // "available", "snapshotting", "importing", ...
+	zone       string
+	baseVolume string // name of the volume the snapshot was taken from
+	createdAt  time.Time
+}
+
+// volConfirmAction is which volume/snapshot action is awaiting confirmation.
+const (
+	volActionNone = iota
+	volActionDeleteVolume
+	volActionDeleteSnapshot
+	volActionAttach
+	volActionDetach
+)
+
 // instConfirmAction is which server power action is awaiting confirmation.
 const (
 	instActionNone = iota
@@ -222,6 +256,8 @@ type dataMsg struct {
 	registryNamespaces []registryNamespace
 	secrets            []secretItem
 	servers            []instanceServer
+	volumes            []volumeItem
+	snapshots          []snapshotItem
 }
 
 type sizeMsg struct {
@@ -252,6 +288,7 @@ const (
 	inputModeSecretNewVersion
 	inputModeSecretUpdateDesc
 	inputModeSecret
+	inputModeSnapshot
 )
 
 // createDoneMsg is sent after a successful create/upload operation.
@@ -359,6 +396,22 @@ type serverPrivateIPMsg struct {
 	serverID string
 	ip       string
 }
+
+// volumesMsg carries the Volumes & Snapshots lists (all zones of the region).
+type volumesMsg struct {
+	volumes   []volumeItem
+	snapshots []snapshotItem
+}
+
+// volumePollTickMsg fires every few seconds while a volume or snapshot is in
+// a transient state, mirroring the server/node polling.
+type volumePollTickMsg struct{}
+
+type snapshotCreatedMsg struct{}
+type snapshotDeletedMsg struct{}
+type volumeDeletedMsg struct{}
+type volumeAttachedMsg struct{}
+type volumeDetachedMsg struct{}
 
 type errMsg struct{ err error }
 

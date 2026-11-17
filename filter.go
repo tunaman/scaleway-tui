@@ -100,6 +100,60 @@ func (m rootModel) selectedServer() *instanceServer {
 	return &visible[m.instCursor]
 }
 
+func (m rootModel) filteredVolumes() []volumeItem {
+	if m.volFilter == "" {
+		return m.volumes
+	}
+	needle := strings.ToLower(m.volFilter)
+	var out []volumeItem
+	for _, v := range m.volumes {
+		if strings.Contains(strings.ToLower(v.name), needle) ||
+			strings.Contains(strings.ToLower(v.volType), needle) ||
+			strings.Contains(strings.ToLower(v.state), needle) ||
+			strings.Contains(strings.ToLower(v.zone), needle) ||
+			strings.Contains(strings.ToLower(v.serverName), needle) {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func (m rootModel) filteredSnapshots() []snapshotItem {
+	if m.volFilter == "" {
+		return m.snapshots
+	}
+	needle := strings.ToLower(m.volFilter)
+	var out []snapshotItem
+	for _, s := range m.snapshots {
+		if strings.Contains(strings.ToLower(s.name), needle) ||
+			strings.Contains(strings.ToLower(s.volType), needle) ||
+			strings.Contains(strings.ToLower(s.state), needle) ||
+			strings.Contains(strings.ToLower(s.zone), needle) ||
+			strings.Contains(strings.ToLower(s.baseVolume), needle) {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// selectedVolume returns the volume under the cursor (volumes pane), or nil.
+func (m rootModel) selectedVolume() *volumeItem {
+	visible := m.filteredVolumes()
+	if len(visible) == 0 || m.volCursor >= len(visible) {
+		return nil
+	}
+	return &visible[m.volCursor]
+}
+
+// selectedSnapshot returns the snapshot under the cursor (snapshots pane).
+func (m rootModel) selectedSnapshot() *snapshotItem {
+	visible := m.filteredSnapshots()
+	if len(visible) == 0 || m.volSnapCursor >= len(visible) {
+		return nil
+	}
+	return &visible[m.volSnapCursor]
+}
+
 func (m rootModel) filteredSecrets() []secretItem {
 	if m.secretFilter == "" {
 		return m.secrets

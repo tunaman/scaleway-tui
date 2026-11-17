@@ -11,6 +11,11 @@ import (
 // Key handling
 // ─────────────────────────────────────────────
 
+// defaultSnapshotName builds a suggested snapshot name: snap-<volname>-<date>.
+func defaultSnapshotName(volName string) string {
+	return "snap-" + volName + "-" + time.Now().Format("20060102")
+}
+
 func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// ── Input overlay: intercept all keys while active ──
 	if m.input.active {
@@ -53,6 +58,10 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				m.input.active = false
 				m.loading = true
 				return m, tea.Batch(m.spin.Tick, m.createSecret(val))
+			case inputModeSnapshot:
+				m.input.active = false
+				m.loading = true
+				return m, tea.Batch(m.spin.Tick, m.createSnapshot(m.snapTarget, val))
 			case inputModeSecretNewVersion:
 				m.input.active = false
 				m.loading = true
@@ -255,6 +264,38 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.loading = true
 			m.billingExportMsg = ""
 			return m, tea.Batch(m.spin.Tick, m.exportBillingCSV(m.billingExportFrom, m.billingExportTo))
+		}
+		return m, nil
+	}
+
+	// ── Volume attach server picker overlay ──
+	if m.volAttachOverlay {
+		total := len(m.attachServersInZone())
+		switch msg.String() {
+		case "ctrl+c":
+			return m, tea.Quit
+		case "esc":
+			m.volAttachOverlay = false
+		case "up", "k":
+			if m.volAttachCursor > 0 {
+				m.volAttachCursor--
+			}
+		case "down", "j":
+			if m.volAttachCursor < total-1 {
+				m.volAttachCursor++
+			}
+		case "enter":
+			servers := m.attachServersInZone()
+			if len(servers) > 0 && m.volAttachCursor < len(servers) {
+				vol := m.volAttachVolume
+				m.volAttachOverlay = false
+				// Confirm before the mutating call.
+				m.volConfirmAction = volActionAttach
+				m.volConfirmID = vol.id
+				m.volConfirmName = vol.name
+				m.volConfirmServerID = servers[m.volAttachCursor].id
+				m.volConfirmServerName = servers[m.volAttachCursor].name
+			}
 		}
 		return m, nil
 	}
@@ -550,6 +591,44 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// ── Volumes & snapshots filter mode ──
+	if m.volFiltering {
+		resetCursor := func() {
+			m.volCursor = 0
+			m.volScrollY = 0
+			m.volSnapCursor = 0
+			m.volSnapScrollY = 0
+		}
+		switch msg.String() {
+		case "esc":
+			m.volFiltering = false
+			m.volFilter = ""
+			resetCursor()
+		case "enter":
+			m.volFiltering = false
+			resetCursor()
+		case "backspace", "ctrl+h":
+			if len([]rune(m.volFilter)) > 0 {
+				runes := []rune(m.volFilter)
+				m.volFilter = string(runes[:len(runes)-1])
+			} else {
+				// Empty filter + backspace → exit filter mode.
+				m.volFiltering = false
+			}
+			resetCursor()
+		case "up":
+			return m.handleUp()
+		case "down":
+			return m.handleDown()
+		default:
+			if msg.Text != "" {
+				m.volFilter += msg.Text
+				resetCursor()
+			}
+		}
+		return m, nil
+	}
+
 	// ── Secret delete confirm ──
 	if m.secConfirmDelete {
 		switch msg.String() {
@@ -573,7 +652,7 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c", "q":
 		if m.showConfirm || m.input.active || m.secShowContent || m.instConfirmAction != instActionNone ||
-			m.upload.active || m.download.active {
+			m.upload.active || m.download.active || m.volConfirmAction != volActionNone || m.volAttachOverlay {
 			// Dismiss overlays rather than quitting.
 			m.showConfirm = false
 			m.input.active = false
@@ -582,6 +661,12 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.instConfirmServerID = ""
 			m.instConfirmServerName = ""
 			m.instConfirmServerZone = ""
+			m.volConfirmAction = volActionNone
+			m.volConfirmID = ""
+			m.volConfirmName = ""
+			m.volConfirmServerID = ""
+			m.volConfirmServerName = ""
+			m.volAttachOverlay = false
 			return m, nil
 		}
 		return m, tea.Quit
@@ -673,6 +758,29 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.iamScrollY = 0
 			return m, nil
 		}
+		// Dismiss volume attach overlay.
+		if m.volAttachOverlay {
+			m.volAttachOverlay = false
+			return m, nil
+		}
+		// Dismiss volume/snapshot action confirm.
+		if m.volConfirmAction != volActionNone {
+			m.volConfirmAction = volActionNone
+			m.volConfirmID = ""
+			m.volConfirmName = ""
+			m.volConfirmServerID = ""
+			m.volConfirmServerName = ""
+			return m, nil
+		}
+		// Clear volumes/snapshots filter if active.
+		if m.volFilter != "" {
+			m.volFilter = ""
+			m.volCursor = 0
+			m.volScrollY = 0
+			m.volSnapCursor = 0
+			m.volSnapScrollY = 0
+			return m, nil
+		}
 		// Dismiss server power-action confirm.
 		if m.instConfirmAction != instActionNone {
 			m.instConfirmAction = instActionNone
@@ -718,6 +826,9 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			if m.state == stateDashboard && m.activeService == serviceInstance {
 				return m, tea.Batch(m.spin.Tick, m.fetchServers())
 			}
+			if m.state == stateDashboard && m.activeService == serviceVolumes {
+				return m, tea.Batch(m.spin.Tick, m.fetchVolumes())
+			}
 			return m, tea.Batch(m.spin.Tick, m.fetchData())
 		}
 	case "e", "E":
@@ -756,6 +867,14 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.secretFilter = ""
 			m.secretCursor = 0
 			m.secretScrollY = 0
+		}
+		if m.state == stateDashboard && m.focus == focusContent && m.activeService == serviceVolumes {
+			m.volFiltering = true
+			m.volFilter = ""
+			m.volCursor = 0
+			m.volScrollY = 0
+			m.volSnapCursor = 0
+			m.volSnapScrollY = 0
 		}
 		if m.state == stateSecretsBrowser && !m.loading {
 			m.secBrowserFiltering = true
@@ -821,6 +940,47 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.loading = true
 			return m, tea.Batch(m.spin.Tick, m.powerServer(id, zone, action))
 		}
+		if m.volConfirmAction != volActionNone {
+			action := m.volConfirmAction
+			id := m.volConfirmID
+			serverID := m.volConfirmServerID
+			// Resolve the target's zone (volumes and snapshots are zone-scoped).
+			zone := ""
+			var vol volumeItem
+			for _, v := range m.volumes {
+				if v.id == id {
+					vol = v
+					zone = v.zone
+					break
+				}
+			}
+			if zone == "" {
+				for _, s := range m.snapshots {
+					if s.id == id {
+						zone = s.zone
+						break
+					}
+				}
+			}
+			m.volConfirmAction = volActionNone
+			m.volConfirmID = ""
+			m.volConfirmName = ""
+			m.volConfirmServerID = ""
+			m.volConfirmServerName = ""
+			m.loading = true
+			var cmd tea.Cmd
+			switch action {
+			case volActionDeleteVolume:
+				cmd = m.deleteVolume(id, zone)
+			case volActionDeleteSnapshot:
+				cmd = m.deleteSnapshot(id, zone)
+			case volActionAttach:
+				cmd = m.attachVolume(vol, serverID)
+			case volActionDetach:
+				cmd = m.detachVolume(vol)
+			}
+			return m, tea.Batch(m.spin.Tick, cmd)
+		}
 		// Object browser: yank (copy) the selected entry's full S3 key.
 		if m.state == stateObjectBrowser && !m.loading && !m.showConfirm && !m.upload.active && !m.download.active {
 			if len(m.browserEntries) > 0 {
@@ -833,6 +993,14 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.instConfirmServerID = ""
 			m.instConfirmServerName = ""
 			m.instConfirmServerZone = ""
+			return m, nil
+		}
+		if m.volConfirmAction != volActionNone {
+			m.volConfirmAction = volActionNone
+			m.volConfirmID = ""
+			m.volConfirmName = ""
+			m.volConfirmServerID = ""
+			m.volConfirmServerName = ""
 			return m, nil
 		}
 		if m.showConfirm {
@@ -926,6 +1094,20 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				m.secConfirmDelete = true
 			}
 		}
+		if m.state == stateDashboard && m.activeService == serviceVolumes && m.focus == focusContent && !m.loading {
+			if m.volFocus == 0 {
+				// Only unattached volumes can be deleted.
+				if v := m.selectedVolume(); v != nil && v.serverID == "" {
+					m.volConfirmAction = volActionDeleteVolume
+					m.volConfirmID = v.id
+					m.volConfirmName = v.name
+				}
+			} else if s := m.selectedSnapshot(); s != nil {
+				m.volConfirmAction = volActionDeleteSnapshot
+				m.volConfirmID = s.id
+				m.volConfirmName = s.name
+			}
+		}
 		if m.state == stateObjectBrowser && !m.loading && !m.showConfirm {
 			var targets []bucketEntry
 			if len(m.browserSelected) > 0 {
@@ -1001,7 +1183,31 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				m.instConfirmServerZone = s.zone
 			}
 		}
+		// Volumes: snapshot the selected volume (name input pre-filled).
+		if m.state == stateDashboard && m.activeService == serviceVolumes && m.volFocus == 0 &&
+			m.focus == focusContent && !m.loading {
+			if v := m.selectedVolume(); v != nil {
+				m.snapTarget = *v
+				m.input.active = true
+				m.input.mode = inputModeSnapshot
+				m.input.value = defaultSnapshotName(v.name)
+				m.input.cursor = len([]rune(m.input.value))
+				m.input.errStr = ""
+			}
+		}
 	case "x", "X":
+		// Volumes: detach the selected (attached) volume from its server.
+		if m.state == stateDashboard && m.activeService == serviceVolumes && m.volFocus == 0 &&
+			m.focus == focusContent && !m.loading {
+			if v := m.selectedVolume(); v != nil && v.serverID != "" {
+				m.volConfirmAction = volActionDetach
+				m.volConfirmID = v.id
+				m.volConfirmName = v.name
+				m.volConfirmServerID = v.serverID
+				m.volConfirmServerName = v.serverName
+			}
+			return m, nil
+		}
 		if m.state == stateK8sBrowser && m.k8sBrowserFocus == 1 && !m.loading && !m.k8sConfirmReboot && !m.k8sConfirmReplace {
 			if len(m.k8sBrowserNodes) > 0 && m.k8sBrowserNodeCursor < len(m.k8sBrowserNodes) {
 				n := m.k8sBrowserNodes[m.k8sBrowserNodeCursor]
@@ -1094,6 +1300,9 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.bucketScrollX = max(0, m.bucketScrollX-4)
 		} else if m.state == stateObjectBrowser {
 			m.browserScrollX = max(0, m.browserScrollX-4)
+		} else if m.state == stateDashboard && m.activeService == serviceVolumes && m.focus == focusContent && !m.loading {
+			// Volumes: switch to the snapshots pane.
+			m.volFocus = 1
 		} else if m.state == stateDashboard && m.activeService == serviceBilling && !m.loading {
 			m.billingPeriod = prevMonth(m.billingPeriod)
 			m.loading = true
@@ -1115,6 +1324,9 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.bucketScrollX += 4
 		} else if m.state == stateObjectBrowser {
 			m.browserScrollX += 4
+		} else if m.state == stateDashboard && m.activeService == serviceVolumes && m.focus == focusContent && !m.loading {
+			// Volumes: switch to the volumes pane.
+			m.volFocus = 0
 		} else if m.state == stateDashboard && m.activeService == serviceBilling && !m.loading {
 			next := nextMonth(m.billingPeriod)
 			// Don't navigate into the future beyond current month
@@ -1172,6 +1384,16 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case "a":
+		// Volumes: attach the selected (unattached) volume to a server.
+		if m.state == stateDashboard && m.activeService == serviceVolumes && m.volFocus == 0 &&
+			m.focus == focusContent && !m.loading {
+			if v := m.selectedVolume(); v != nil && v.serverID == "" {
+				m.volAttachVolume = *v
+				m.volAttachCursor = 0
+				m.volAttachOverlay = true
+			}
+			return m, nil
+		}
 		if m.state == stateObjectBrowser && len(m.browserEntries) > 0 {
 			if m.browserSelected == nil {
 				m.browserSelected = make(map[string]bool)
@@ -1406,6 +1628,25 @@ func (m rootModel) handleUp() (rootModel, tea.Cmd) {
 				}
 			}
 		}
+		if m.activeService == serviceVolumes {
+			if m.volFocus == 0 {
+				fv := m.filteredVolumes()
+				if len(fv) > 0 && m.volCursor > 0 {
+					m.volCursor--
+					if m.volCursor < m.volScrollY {
+						m.volScrollY = m.volCursor
+					}
+				}
+			} else {
+				fs := m.filteredSnapshots()
+				if len(fs) > 0 && m.volSnapCursor > 0 {
+					m.volSnapCursor--
+					if m.volSnapCursor < m.volSnapScrollY {
+						m.volSnapScrollY = m.volSnapCursor
+					}
+				}
+			}
+		}
 	}
 	return m, nil
 }
@@ -1510,6 +1751,19 @@ func (m rootModel) handleDown() (rootModel, tea.Cmd) {
 			fs := m.filteredSecrets()
 			if len(fs) > 0 && m.secretCursor < len(fs)-1 {
 				m.secretCursor++
+			}
+		}
+		if m.activeService == serviceVolumes {
+			if m.volFocus == 0 {
+				fv := m.filteredVolumes()
+				if len(fv) > 0 && m.volCursor < len(fv)-1 {
+					m.volCursor++
+				}
+			} else {
+				fs := m.filteredSnapshots()
+				if len(fs) > 0 && m.volSnapCursor < len(fs)-1 {
+					m.volSnapCursor++
+				}
 			}
 		}
 	}
