@@ -203,11 +203,11 @@ func saveKubeConfig(dir, clusterName string, data []byte) (string, error) {
 	}
 	defer os.Remove(tmp.Name()) //nolint:errcheck // no-op after a successful rename
 	if err := tmp.Chmod(0o600); err != nil {
-		tmp.Close() //nolint:errcheck,gosec // already failing
+		_ = tmp.Close() // best-effort cleanup; the original error wins
 		return "", err
 	}
 	if _, err := tmp.Write(data); err != nil {
-		tmp.Close() //nolint:errcheck,gosec // already failing
+		_ = tmp.Close() // best-effort cleanup; the original error wins
 		return "", err
 	}
 	if err := tmp.Close(); err != nil {
