@@ -9,9 +9,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 make build          # go mod tidy + go build -o bin/scw-tui main.go
 make clean          # remove bin/
 
-# Lint (matches CI)
-go vet ./...
-golangci-lint run
+# Test + lint (matches CI)
+make test           # go vet ./... + go test .
+make lint           # golangci-lint run + gosec ./... + govulncheck (tool versions pinned to CI in the Makefile)
+make install-tools  # go install gosec (required by make lint)
 
 # Run
 ./bin/scw-tui
