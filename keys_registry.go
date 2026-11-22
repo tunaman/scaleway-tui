@@ -8,111 +8,22 @@ import (
 // Key handling — Container Registry (dashboard + registry browser)
 // ─────────────────────────────────────────────
 
-// handleRegistryFilterKey handles keys while the namespace list filter is active.
-func (m rootModel) handleRegistryFilterKey(msg tea.KeyPressMsg) (rootModel, tea.Cmd) {
-	switch msg.String() {
-	case "esc":
-		m.registryFiltering = false
-		m.registryFilter = ""
-		m.registryCursor = 0
-		m.registryScrollY = 0
-	case "enter":
-		m.registryFiltering = false
-		m.registryCursor = 0
-		m.registryScrollY = 0
-	case "backspace", "ctrl+h":
-		if len([]rune(m.registryFilter)) > 0 {
-			runes := []rune(m.registryFilter)
-			m.registryFilter = string(runes[:len(runes)-1])
-		} else {
-			m.registryFiltering = false
-		}
-		m.registryCursor = 0
-		m.registryScrollY = 0
-	case "up":
-		return m.handleUp()
-	case "down":
-		return m.handleDown()
-	default:
-		if msg.Text != "" {
-			m.registryFilter += msg.Text
-			m.registryCursor = 0
-			m.registryScrollY = 0
-		}
-	}
-	return m, nil
+// resetRegistryFilterCursors / resetRegBrowserFilterCursors /
+// resetRegTagFilterCursors zero the cursor(s)/scroll of the matching list for
+// the shared filter handler (handleFilterKey).
+func (m *rootModel) resetRegistryFilterCursors() {
+	m.registryCursor = 0
+	m.registryScrollY = 0
 }
 
-// handleRegBrowserFilterKey handles keys while the images list filter is active.
-func (m rootModel) handleRegBrowserFilterKey(msg tea.KeyPressMsg) (rootModel, tea.Cmd) {
-	switch msg.String() {
-	case "esc":
-		m.regBrowserFiltering = false
-		m.regBrowserFilter = ""
-		m.regBrowserCursor = 0
-		m.regBrowserScrollY = 0
-	case "enter":
-		m.regBrowserFiltering = false
-		m.regBrowserCursor = 0
-		m.regBrowserScrollY = 0
-	case "backspace", "ctrl+h":
-		if len([]rune(m.regBrowserFilter)) > 0 {
-			runes := []rune(m.regBrowserFilter)
-			m.regBrowserFilter = string(runes[:len(runes)-1])
-		} else {
-			m.regBrowserFiltering = false
-		}
-		m.regBrowserCursor = 0
-		m.regBrowserScrollY = 0
-	case "up":
-		return m.handleUp()
-	case "down":
-		return m.handleDown()
-	default:
-		if msg.Text != "" {
-			m.regBrowserFilter += msg.Text
-			m.regBrowserCursor = 0
-			m.regBrowserScrollY = 0
-		}
-	}
-	return m, nil
+func (m *rootModel) resetRegBrowserFilterCursors() {
+	m.regBrowserCursor = 0
+	m.regBrowserScrollY = 0
 }
 
-// handleRegTagFilterKey handles keys while the tags list filter is active.
-func (m rootModel) handleRegTagFilterKey(msg tea.KeyPressMsg) (rootModel, tea.Cmd) {
-	switch msg.String() {
-	case "ctrl+c":
-		return m, tea.Quit
-	case "esc":
-		m.regTagFiltering = false
-		m.regTagFilter = ""
-		m.regBrowserTagCursor = 0
-		m.regBrowserTagScrollY = 0
-	case "enter":
-		m.regTagFiltering = false
-		m.regBrowserTagCursor = 0
-		m.regBrowserTagScrollY = 0
-	case "backspace", "ctrl+h":
-		if len([]rune(m.regTagFilter)) > 0 {
-			runes := []rune(m.regTagFilter)
-			m.regTagFilter = string(runes[:len(runes)-1])
-		} else {
-			m.regTagFiltering = false
-		}
-		m.regBrowserTagCursor = 0
-		m.regBrowserTagScrollY = 0
-	case "up":
-		return m.handleUp()
-	case "down":
-		return m.handleDown()
-	default:
-		if msg.Text != "" {
-			m.regTagFilter += msg.Text
-			m.regBrowserTagCursor = 0
-			m.regBrowserTagScrollY = 0
-		}
-	}
-	return m, nil
+func (m *rootModel) resetRegTagFilterCursors() {
+	m.regBrowserTagCursor = 0
+	m.regBrowserTagScrollY = 0
 }
 
 // handleRegTagActionOverlayKey handles the pull-instructions overlay

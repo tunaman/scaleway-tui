@@ -8,40 +8,11 @@ import (
 // Key handling — Instances (dashboard service)
 // ─────────────────────────────────────────────
 
-// handleInstFilterKey handles keys while the server list filter is active.
-func (m rootModel) handleInstFilterKey(msg tea.KeyPressMsg) (rootModel, tea.Cmd) {
-	switch msg.String() {
-	case "esc":
-		m.instFiltering = false
-		m.instFilter = ""
-		m.instCursor = 0
-		m.instScrollY = 0
-	case "enter":
-		m.instFiltering = false
-		m.instCursor = 0
-		m.instScrollY = 0
-	case "backspace", "ctrl+h":
-		if len([]rune(m.instFilter)) > 0 {
-			runes := []rune(m.instFilter)
-			m.instFilter = string(runes[:len(runes)-1])
-		} else {
-			// Empty filter + backspace → exit filter mode.
-			m.instFiltering = false
-		}
-		m.instCursor = 0
-		m.instScrollY = 0
-	case "up":
-		return m.handleUp()
-	case "down":
-		return m.handleDown()
-	default:
-		if msg.Text != "" {
-			m.instFilter += msg.Text
-			m.instCursor = 0
-			m.instScrollY = 0
-		}
-	}
-	return m, nil
+// resetInstFilterCursors zeroes the server list cursor/scroll for the
+// shared filter handler (handleFilterKey).
+func (m *rootModel) resetInstFilterCursors() {
+	m.instCursor = 0
+	m.instScrollY = 0
 }
 
 // instanceStartFilterKey begins inline filtering of the server list.

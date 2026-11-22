@@ -8,39 +8,11 @@ import (
 // Key handling — IAM browser
 // ─────────────────────────────────────────────
 
-// handleIAMFilterKey handles keys while the IAM browser filter is active.
-func (m rootModel) handleIAMFilterKey(msg tea.KeyPressMsg) (rootModel, tea.Cmd) {
-	switch msg.String() {
-	case "esc":
-		m.iamFiltering = false
-		m.iamFilter = ""
-		m.iamCursor = 0
-		m.iamScrollY = 0
-	case "enter":
-		m.iamFiltering = false
-		m.iamCursor = 0
-		m.iamScrollY = 0
-	case "backspace", "ctrl+h":
-		if len([]rune(m.iamFilter)) > 0 {
-			runes := []rune(m.iamFilter)
-			m.iamFilter = string(runes[:len(runes)-1])
-		} else {
-			m.iamFiltering = false
-		}
-		m.iamCursor = 0
-		m.iamScrollY = 0
-	case "up":
-		return m.handleUp()
-	case "down":
-		return m.handleDown()
-	default:
-		if msg.Text != "" {
-			m.iamFilter += msg.Text
-			m.iamCursor = 0
-			m.iamScrollY = 0
-		}
-	}
-	return m, nil
+// resetIAMFilterCursors zeroes the browser cursor/scroll for the shared
+// filter handler (handleFilterKey).
+func (m *rootModel) resetIAMFilterCursors() {
+	m.iamCursor = 0
+	m.iamScrollY = 0
 }
 
 // iamStartFilterKey begins inline filtering of the active IAM tab.

@@ -8,74 +8,17 @@ import (
 // Key handling — Secrets Manager (dashboard + secrets browser)
 // ─────────────────────────────────────────────
 
-// handleSecretFilterKey handles keys while the dashboard secrets filter is active.
-func (m rootModel) handleSecretFilterKey(msg tea.KeyPressMsg) (rootModel, tea.Cmd) {
-	switch msg.String() {
-	case "esc":
-		m.secretFiltering = false
-		m.secretFilter = ""
-		m.secretCursor = 0
-		m.secretScrollY = 0
-	case "enter":
-		m.secretFiltering = false
-		m.secretCursor = 0
-		m.secretScrollY = 0
-	case "backspace", "ctrl+h":
-		if len([]rune(m.secretFilter)) > 0 {
-			runes := []rune(m.secretFilter)
-			m.secretFilter = string(runes[:len(runes)-1])
-		} else {
-			m.secretFiltering = false
-		}
-		m.secretCursor = 0
-		m.secretScrollY = 0
-	case "up":
-		return m.handleUp()
-	case "down":
-		return m.handleDown()
-	default:
-		if msg.Text != "" {
-			m.secretFilter += msg.Text
-			m.secretCursor = 0
-			m.secretScrollY = 0
-		}
-	}
-	return m, nil
+// resetSecretFilterCursors / resetSecBrowserFilterCursors zero the
+// cursor/scroll of the matching list for the shared filter handler
+// (handleFilterKey).
+func (m *rootModel) resetSecretFilterCursors() {
+	m.secretCursor = 0
+	m.secretScrollY = 0
 }
 
-// handleSecBrowserFilterKey handles keys while the secrets browser filter is active.
-func (m rootModel) handleSecBrowserFilterKey(msg tea.KeyPressMsg) (rootModel, tea.Cmd) {
-	switch msg.String() {
-	case "esc":
-		m.secBrowserFiltering = false
-		m.secBrowserFilter = ""
-		m.secBrowserCursor = 0
-		m.secBrowserScrollY = 0
-	case "enter":
-		m.secBrowserFiltering = false
-		m.secBrowserCursor = 0
-		m.secBrowserScrollY = 0
-	case "backspace", "ctrl+h":
-		if len([]rune(m.secBrowserFilter)) > 0 {
-			runes := []rune(m.secBrowserFilter)
-			m.secBrowserFilter = string(runes[:len(runes)-1])
-		} else {
-			m.secBrowserFiltering = false
-		}
-		m.secBrowserCursor = 0
-		m.secBrowserScrollY = 0
-	case "up":
-		return m.handleUp()
-	case "down":
-		return m.handleDown()
-	default:
-		if msg.Text != "" {
-			m.secBrowserFilter += msg.Text
-			m.secBrowserCursor = 0
-			m.secBrowserScrollY = 0
-		}
-	}
-	return m, nil
+func (m *rootModel) resetSecBrowserFilterCursors() {
+	m.secBrowserCursor = 0
+	m.secBrowserScrollY = 0
 }
 
 // handleSecShowContentKey handles the secret content overlay (C copies,
