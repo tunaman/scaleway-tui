@@ -19,38 +19,28 @@ A keyboard-driven terminal UI for managing your [Scaleway](https://www.scaleway.
 - **Object Storage browser** — navigate buckets and folders, view object sizes, upload, download one or more selected files to a local directory, create folders/buckets, and delete objects
 - **Kubernetes cluster browser** — list Kapsule clusters, browse node pools (autoscaling, node type, zone, volume), view nodes with status, reboot/replace nodes, and download the cluster kubeconfig to `~/.kube/scw-<cluster>.yaml`
 - **Container Registry browser** — browse namespaces, images, and tags; copy pull commands
-- **Secrets Manager** — list secrets, browse versions, view secret content, add new versions, and update version descriptions
+- **Secrets Manager** — create secrets, list them, browse versions, view secret content, add new versions, and update version descriptions
 - **IAM browser** — read-only, organization-scoped view with tabs for Users, Applications, Groups, Policies, API keys, and Logs; filter within any tab
 - **Volumes & Snapshots** — list all volumes and snapshots across every zone of the region with type, size, state, and attached server; take snapshots (with auto-suggested name), delete snapshots or unattached volumes, and attach/detach volumes to servers (with confirmation)
-- **Billing view** — inspect current-period costs, filter by project, export date-range to CSV
-- **Project switcher** — switch between Scaleway projects without leaving the TUI
+- **Billing view** — browse monthly costs, filter by project, export date-range to CSV
 - **Copy to clipboard** — copy server/node IPs, registry pull commands, secret values, S3 object keys, and API keys straight to your system clipboard via OSC 52 (supported by iTerm2, macOS Terminal, Windows Terminal, kitty, alacritty, foot, and most modern terminals)
 - **Vim-style keyboard navigation** — `j/k`, `/` to filter, and single-key actions throughout
 
 ## Prerequisites
 
-- Go 1.21+
+- Go 1.26+
 - A Scaleway account with at least one profile configured in `~/.config/scw/config.yaml`
   (set up with `scw init` or by editing the file manually)
 
 ## Installation
 
 ```bash
-git clone https://github.com/<your-username>/scw-tui.git
-cd scw-tui
+git clone https://github.com/tunaman/scaleway-tui.git
+cd scaleway-tui
 make build
 ```
 
 The binary is placed at `bin/scw-tui`.
-
-### Docker
-
-```bash
-docker build -t scw-tui .
-docker run -it --rm \
-  -v "$HOME/.config/scw:/root/.config/scw:ro" \
-  scw-tui
-```
 
 ## Usage
 
@@ -138,6 +128,7 @@ On first launch you will be presented with a profile picker. Select a profile an
 
 | Key | Action |
 | ----- | -------- |
+| `C` | Create a new secret (dashboard) |
 | `Enter` | View secret content for selected version |
 | `C` | (in content viewer) Copy the secret value to the clipboard |
 | `n` | Add a new secret version |
@@ -179,6 +170,12 @@ scw-tui stores only UI preferences (last active profile) in `~/.config/scw-tui/c
 # Build
 make build
 
+# Test (go vet + go test)
+make test
+
+# Lint (golangci-lint + gosec + govulncheck; run `make install-tools` first)
+make lint
+
 # Clean
 make clean
 
@@ -195,5 +192,5 @@ The codebase is a single `package main` split across focused files (`main.go`, `
 | [charmbracelet/bubbletea](https://github.com/charmbracelet/bubbletea) | TUI framework |
 | [charmbracelet/bubbles](https://github.com/charmbracelet/bubbles) | UI components (spinner, etc.) |
 | [charmbracelet/lipgloss](https://github.com/charmbracelet/lipgloss) | Terminal styling (Dracula theme) |
-| [scaleway/scaleway-sdk-go](https://github.com/scaleway/scaleway-sdk-go) | Scaleway API (K8s, billing, account, registry, secrets, IAM) |
+| [scaleway/scaleway-sdk-go](https://github.com/scaleway/scaleway-sdk-go) | Scaleway API (instances, block storage, IPAM, K8s, billing, registry, secrets, IAM) |
 | [minio/minio-go](https://github.com/minio/minio-go) | S3-compatible object storage |
