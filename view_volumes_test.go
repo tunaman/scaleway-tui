@@ -4,6 +4,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	block "github.com/scaleway/scaleway-sdk-go/api/block/v1"
+	"github.com/scaleway/scaleway-sdk-go/scw"
 )
 
 // TestRenderVolumesDashboard draws the Volumes & Snapshots dashboard screen
@@ -167,7 +170,8 @@ func TestRenderVolumesSelectedRowBackground(t *testing.T) {
 	}
 }
 
-// TestHasTransientVolume checks the polling trigger states.
+// TestHasTransientVolume checks the polling trigger states (Block API and
+// legacy Instance API states).
 func TestHasTransientVolume(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -176,18 +180,124 @@ func TestHasTransientVolume(t *testing.T) {
 		want      bool
 	}{
 		{"all available", []volumeItem{{state: "available"}}, []snapshotItem{{state: "available"}}, false},
+		{"volume in use", []volumeItem{{state: "in_use"}}, nil, false},
+		{"volume creating", []volumeItem{{state: "creating"}}, nil, true},
+		{"volume deleting", []volumeItem{{state: "deleting"}}, nil, true},
+		{"volume resizing", []volumeItem{{state: "resizing"}}, nil, true},
 		{"volume snapshotting", []volumeItem{{state: "snapshotting"}}, nil, true},
-		{"volume attaching", []volumeItem{{state: "attaching"}}, nil, true},
-		{"volume hotsyncing", []volumeItem{{state: "hotsyncing"}}, nil, true},
+		{"volume updating", []volumeItem{{state: "updating"}}, nil, true},
+		{"volume legacy hotsyncing", []volumeItem{{state: "hotsyncing"}}, nil, true},
+		{"volume legacy attaching", []volumeItem{{state: "attaching"}}, nil, true},
 		{"volume error", []volumeItem{{state: "error"}}, nil, false},
-		{"snapshot snapshotting", nil, []snapshotItem{{state: "snapshotting"}}, true},
-		{"snapshot importing", nil, []snapshotItem{{state: "importing"}}, true},
-		{"snapshot exporting", nil, []snapshotItem{{state: "exporting"}}, true},
-		{"snapshot invalid_data", nil, []snapshotItem{{state: "invalid_data"}}, false},
+		{"volume locked", []volumeItem{{state: "locked"}}, nil, false},
+		{"volume ref attaching", []volumeItem{{state: "available", refState: "attaching"}}, nil, true},
+		{"volume ref attached", []volumeItem{{state: "in_use", refState: "attached"}}, nil, false},
+		{"volume ref detaching", []volumeItem{{state: "in_use", refState: "detaching"}}, nil, true},
+		{"snapshot creating", nil, []snapshotItem{{state: "creating"}}, true},
+		{"snapshot deleting", nil, []snapshotItem{{state: "deleting"}}, true},
+		{"snapshot legacy importing", nil, []snapshotItem{{state: "importing"}}, true},
+		{"snapshot error", nil, []snapshotItem{{state: "error"}}, false},
 	}
 	for _, c := range cases {
 		if got := hasTransientVolume(c.volumes, c.snapshots); got != c.want {
 			t.Errorf("hasTransientVolume(%s) = %v, want %v", c.name, got, c.want)
 		}
+	}
+}
+
+// TestBlockVolumeFromSDK checks the Block-API conversion: the attached
+// server's ID comes from the volume's references, and the status/type map
+// onto the TUI row fields.
+func TestBlockVolumeFromSDK(t *testing.T) {
+	created := time.Date(2026, 11, 1, 9, 0, 0, 0, time.UTC)
+	v := &block.Volume{
+		ID:      "vol-1",
+		Name:    "db-data",
+		Size:    10 * scw.GB,
+		Type:    "sbs_5k",
+		Status:  block.VolumeStatusInUse,
+		Zone:    scw.ZoneNlAms1,
+		CreatedAt: &created,
+		References: []*block.Reference{
+			{
+				ID:                  "ref-1",
+				ProductResourceType: "instance_server",
+				ProductResourceID:   "srv-1",
+				Type:                block.ReferenceTypeExclusive,
+				Status:              block.ReferenceStatusAttached,
+			},
+		},
+	}
+	it := blockVolumeFromSDK(v)
+	if it.id != "vol-1" || it.name != "db-data" || it.size != uint64(10*scw.GB) {
+		t.Errorf("unexpected basics: %+v", it)
+	}
+	if it.volType != "sbs_5k" || it.state != "in_use" || it.zone != "nl-ams-1" {
+		t.Errorf("unexpected type/state/zone: %+v", it)
+	}
+	if it.serverID != "srv-1" || it.refState != "attached" {
+		t.Errorf("expected server reference srv-1/attached, got %q/%q", it.serverID, it.refState)
+	}
+	if !it.createdAt.Equal(created) {
+		t.Errorf("createdAt = %v, want %v", it.createdAt, created)
+	}
+}
+
+// TestBlockSnapshotFromSDK checks the Block-API snapshot conversion,
+// including the fallback to the storage class when the parent volume is gone.
+func TestBlockSnapshotFromSDK(t *testing.T) {
+	created := time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC)
+	s := &block.Snapshot{
+		ID:         "snap-1",
+		Name:       "snap-db",
+		Size:       5 * scw.GB,
+		Status:     block.SnapshotStatusAvailable,
+		Zone:       scw.ZoneNlAms1,
+		CreatedAt:  &created,
+		Class:      block.StorageClassSbs,
+		ParentVolume: &block.SnapshotParentVolume{
+			ID:   "vol-1",
+			Name: "db-data",
+			Type: "sbs_5k",
+		},
+	}
+	it := blockSnapshotFromSDK(s)
+	if it.id != "snap-1" || it.baseVolume != "db-data" || it.volType != "sbs_5k" {
+		t.Errorf("unexpected parent mapping: %+v", it)
+	}
+	if it.state != "available" || it.zone != "nl-ams-1" {
+		t.Errorf("unexpected state/zone: %+v", it)
+	}
+
+	// Parent volume deleted → no base name, type falls back to the class.
+	orphan := *s
+	orphan.ParentVolume = nil
+	oit := blockSnapshotFromSDK(&orphan)
+	if oit.baseVolume != "" || oit.volType != "sbs" {
+		t.Errorf("orphan snapshot: base=%q type=%q, want %q/%q", oit.baseVolume, oit.volType, "", "sbs")
+	}
+}
+
+// TestVolumeServerName checks that the attached server's display name is
+// resolved from the fetched server list when only its ID is known (the
+// Block API case), with the stored name winning for legacy rows.
+func TestVolumeServerName(t *testing.T) {
+	m := rootModel{
+		servers: []instanceServer{
+			{id: "srv-1", name: "web-prod-1"},
+			{id: "srv-2", name: "worker-2"},
+		},
+	}
+	byRef := volumeItem{id: "v1", serverID: "srv-1"}
+	if got := m.volumeServerName(byRef); got != "web-prod-1" {
+		t.Errorf("volumeServerName(known ID) = %q, want %q", got, "web-prod-1")
+	}
+	stored := volumeItem{id: "v2", serverID: "srv-2", serverName: "legacy-name"}
+	if got := m.volumeServerName(stored); got != "legacy-name" {
+		t.Errorf("volumeServerName(stored name) = %q, want %q", got, "legacy-name")
+	}
+	unknown := volumeItem{id: "v3", serverID: "srv-9"}
+	if got := m.volumeServerName(unknown); got != "" {
+		t.Errorf("volumeServerName(unknown ID) = %q, want empty", got)
 	}
 }
