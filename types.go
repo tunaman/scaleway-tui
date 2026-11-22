@@ -90,11 +90,12 @@ type volumeItem struct {
 	id         string
 	name       string
 	size       uint64 // bytes
-	volType    string // "b_ssd", "l_ssd", ...
-	state      string // "available", "snapshotting", "attaching", ...
+	volType    string // "sbs_5k", "l_ssd", "b_ssd", ...
+	state      string // "available", "in_use", "snapshotting", "creating", ...
 	zone       string
-	serverName string // attached server's name ("" when not attached)
-	serverID   string
+	serverName string // attached server's name ("" when unknown/not attached)
+	serverID   string // attached server's ID (set for sbs volumes via reference)
+	refState   string // status of the server reference ("attached", "attaching", "detaching"); "" when not attached
 	createdAt  time.Time
 }
 
@@ -258,6 +259,10 @@ type dataMsg struct {
 	servers            []instanceServer
 	volumes            []volumeItem
 	snapshots          []snapshotItem
+	// volumeErr is non-nil when part of the volume/snapshot fetch failed
+	// (the lists then carry whatever did succeed); the Volumes pane shows it
+	// instead of a bare "no volumes found" message.
+	volumeErr error
 }
 
 type sizeMsg struct {
@@ -398,9 +403,13 @@ type serverPrivateIPMsg struct {
 }
 
 // volumesMsg carries the Volumes & Snapshots lists (all zones of the region).
+// err is nil when every sub-fetch succeeded; otherwise it describes the
+// failures (volumes/snapshots may then be partial, or nil when nothing
+// could be fetched at all).
 type volumesMsg struct {
 	volumes   []volumeItem
 	snapshots []snapshotItem
+	err       error
 }
 
 // volumePollTickMsg fires every few seconds while a volume or snapshot is in

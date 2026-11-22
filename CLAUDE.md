@@ -9,9 +9,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 make build          # go mod tidy + go build -o bin/scw-tui main.go
 make clean          # remove bin/
 
-# Lint (matches CI)
-go vet ./...
-golangci-lint run
+# Test + lint (matches CI)
+make test           # go vet ./... + go test .
+make lint           # golangci-lint run + gosec ./... + govulncheck (tool versions pinned to CI in the Makefile)
+make install-tools  # go install gosec (required by make lint)
 
 # Run
 ./bin/scw-tui
@@ -33,7 +34,7 @@ The codebase is a single Go package (`package main`) split across these files:
 | `util.go` | `panelBox`, `padRight`, `renderVScrollBar`, `formatBytes`, `formatEuroShort`, `parentPrefix`, `expandHome`, `safeRelPath`, `prevMonth`, `nextMonth`, `moneyToFloat`, `min`, `max` |
 | `cmd_s3.go` | `fetchData`, `calculateSize`, `fetchBucketContents`, `createBucket/Folder`, `uploadFile`, `downloadFiles` (multi-file, `.part` temp + rename), `deleteEntries`, `progressReader` |
 | `cmd_instance.go` | `listServersAllZones` (all zones × all states of the region), `serverFromSDK` (collects `ipamIPIDs` from `PrivateNics`), `fetchServers`, `powerServer`, `pollServersAfterDelay`, `regionZones`, `fetchServerPrivateIP` + `selectedServerPrivateIPCmd` (lazy IPAM private-IP resolution) |
-| `cmd_volumes.go` | `listVolumesAllZones` + `listZoneVolumes` (all zones, project-filtered; failing zones skipped like servers), `volumeFromSDK`/`snapshotFromSDK`, `hasTransientVolume` (poll trigger), `fetchVolumes`, `pollVolumesAfterDelay`, `createSnapshot`, `deleteSnapshot`, `deleteVolume`, `attachVolume`, `detachVolume` |
+| `cmd_volumes.go` | `listVolumesAllZones` + `listZoneVolumes` (all zones × **both** the Instance API (local `l_ssd`/scratch) and the Block API (`sbs_*`), project-filtered, merged; a zone fails only when all four sub-fetches fail), `volumeFromSDK`/`snapshotFromSDK` + `blockVolumeFromSDK`/`blockSnapshotFromSDK` (block rows carry the attached server as a `References` ID only), `isBlockVolume`, `hasTransientVolume` (poll trigger; block + legacy states + ref attaching/detaching), `fetchVolumes` (partial failures ride along in `volumesMsg.err`), `pollVolumesAfterDelay`, `createSnapshot`/`deleteSnapshot`/`deleteVolume` (Block API for `sbs_*`, Instance API for legacy), `attachVolume`/`detachVolume` (Instance API only — the Block API has no attach/detach) |
 | `cmd_k8s.go` | `fetchNodePools` (annotates each pool with node-type stock via `fetchServerTypesAvailability`), `fetchNodes`, `rebootNode`, `replaceNode`, `fetchKubeConfig` + `saveKubeConfig` (raw YAML via `GetClusterKubeConfig`, written 0600 to `~/.kube/scw-<cluster>.yaml`) |
 | `cmd_registry.go` | `fetchRegistryImages/Tags`, `deleteRegistryTags` |
 | `cmd_billing.go` | `fetchBillingOverview`, `fetchConsumptionDetail` (aggregates by category+product), `exportBillingCSV` (date-range, project-filtered) |
@@ -67,7 +68,7 @@ The IAM browser (`stateIAMBrowser`) is read-only and organization-scoped. It has
 
 The Instances service (`serviceInstance`) is a dashboard-level view only — no dedicated `state` constant. It renders a server list + SERVER INFO detail pane (`renderServers`) with power actions (`O`/`S`/`R`) that set `m.instConfirmAction` and show a confirm dialog; after a successful action the list refetches and polls every 3s while any server is `starting`/`stopping` (`serverPollTickMsg`).
 
-The Volumes & Snapshots service (`serviceVolumes`) is also dashboard-level only. It renders a list pane + detail pane (`renderVolumes`); `←`/`→` switch the pane (`m.volFocus` 0 = volumes, 1 = snapshots) with per-pane cursors. Data loads eagerly in `fetchData` (like servers) and `F5` refetches via `fetchVolumes`. Actions: `S` snapshots the selected volume (input overlay, name pre-filled by `defaultSnapshotName`), `A` opens the attach server picker (servers in the volume's zone only), `X` detaches, `D` deletes (snapshots always; volumes only when unattached) — all mutating actions go through `m.volConfirmAction` + `renderVolumeConfirm` first. The list polls every 3s while `hasTransientVolume` is true (snapshotting/attaching/resizing/... states).
+The Volumes & Snapshots service (`serviceVolumes`) is also dashboard-level only. It renders a list pane + detail pane (`renderVolumes`); `←`/`→` switch the pane (`m.volFocus` 0 = volumes, 1 = snapshots) with per-pane cursors. Data loads eagerly in `fetchData` (like servers) and `F5` refetches via `fetchVolumes`. `sbs_*` volumes/snapshots come from the **Block Storage API** (Scaleway removed them from the Instance API), merged with the legacy Instance-API local/scratch lists per zone; for block volumes the attached server is known only by ID (volume `References`), so its name is resolved from the server list at render time via `volumeServerName`. Fetch failures (partial or total) land in `m.volFetchErr` and are shown in the pane + top bar instead of a bare "no volumes found". Actions: `S` snapshots the selected volume (input overlay, name pre-filled by `defaultSnapshotName`), `A` opens the attach server picker (servers in the volume's zone only), `X` detaches, `D` deletes (snapshots always; volumes only when unattached) — all mutating actions go through `m.volConfirmAction` + `renderVolumeConfirm` first. The list polls every 3s while `hasTransientVolume` is true (snapshotting/attaching/resizing/... states).
 
 **Private IPs (IPAM):** modern routed-IP servers carry no private address on the NIC — only `ipam_ip_ids` (collected into `instanceServer.ipamIPIDs` by `serverFromSDK`). The address is resolved lazily via the IPAM API: `selectedServerPrivateIPCmd()` fires `fetchServerPrivateIP` for the currently selected server (first IPv4 of its NIC IPs) when it isn't already cached in `m.privateIPs` or in flight (`m.privateIPLoadingID`). It is triggered on initial load (`dataMsg`/`serversMsg`) and on every cursor move in the Instances list. The detail pane shows the resolved address, a faint "Resolving…" while in flight, or "—" otherwise. Best-effort: a lookup failure just leaves "—".
 
@@ -87,7 +88,7 @@ All blocking work (API calls, file uploads) uses `tea.Cmd` closures that return 
 - `serverActionDoneMsg` — power action accepted; triggers `fetchServers()`
 - `serverPollTickMsg` — periodic refresh while a server is starting/stopping
 - `serverPrivateIPMsg` — one server's IPAM-resolved private IP ("" when none found)
-- `volumesMsg` — volumes + snapshots lists loaded (all zones of the region)
+- `volumesMsg` — volumes + snapshots lists loaded (all zones of the region); `err` is non-nil when a sub-fetch failed (lists then carry the partial results, or are nil on total failure, in which case the last known data stays on screen and the error shows in the pane/top bar)
 - `volumePollTickMsg` — periodic refresh while a volume/snapshot is in a transient state
 - `snapshotCreatedMsg` / `snapshotDeletedMsg` / `volumeDeletedMsg` / `volumeAttachedMsg` / `volumeDetachedMsg` — action done; all trigger a `fetchVolumes()` refetch
 - `iamDataMsg` — all six IAM lists loaded (sets `stateIAMBrowser`, builds the ID→name map)

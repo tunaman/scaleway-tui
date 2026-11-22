@@ -944,20 +944,20 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			action := m.volConfirmAction
 			id := m.volConfirmID
 			serverID := m.volConfirmServerID
-			// Resolve the target's zone (volumes and snapshots are zone-scoped).
-			zone := ""
+			// Resolve the target item (zone and type ride along in it; the
+			// type decides whether the call goes to the Block or Instance API).
 			var vol volumeItem
+			var snap snapshotItem
 			for _, v := range m.volumes {
 				if v.id == id {
 					vol = v
-					zone = v.zone
 					break
 				}
 			}
-			if zone == "" {
+			if vol.id == "" {
 				for _, s := range m.snapshots {
 					if s.id == id {
-						zone = s.zone
+						snap = s
 						break
 					}
 				}
@@ -971,9 +971,9 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			var cmd tea.Cmd
 			switch action {
 			case volActionDeleteVolume:
-				cmd = m.deleteVolume(id, zone)
+				cmd = m.deleteVolume(vol)
 			case volActionDeleteSnapshot:
-				cmd = m.deleteSnapshot(id, zone)
+				cmd = m.deleteSnapshot(snap)
 			case volActionAttach:
 				cmd = m.attachVolume(vol, serverID)
 			case volActionDetach:
@@ -1204,7 +1204,7 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				m.volConfirmID = v.id
 				m.volConfirmName = v.name
 				m.volConfirmServerID = v.serverID
-				m.volConfirmServerName = v.serverName
+				m.volConfirmServerName = m.volumeServerName(*v)
 			}
 			return m, nil
 		}

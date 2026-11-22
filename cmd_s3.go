@@ -31,6 +31,7 @@ func (m rootModel) fetchData() tea.Cmd {
 		var servers []instanceServer
 		var volumes []volumeItem
 		var snapshots []snapshotItem
+		var volumeErr error
 
 		// ── Projects ──
 		// Try ListProjects first (requires org ID + permissions). Falls back to
@@ -118,11 +119,10 @@ func (m rootModel) fetchData() tea.Cmd {
 		}
 
 		// ── Volumes & snapshots ──
-		// Non-fatal, same as the server list above.
-		if vols, snaps, err := m.listVolumesAllZones(); err == nil {
-			volumes = vols
-			snapshots = snaps
-		}
+		// Non-fatal, same as the server list above; a failure rides along in
+		// dataMsg so the Volumes pane can show it instead of a bare
+		// "no volumes found" message.
+		volumes, snapshots, volumeErr = m.listVolumesAllZones()
 
 		// ── Buckets ──
 		bkts, err := m.minioClient.ListBuckets(context.Background())
@@ -204,7 +204,7 @@ func (m rootModel) fetchData() tea.Cmd {
 			sReq.Page = scw.Int32Ptr(sPage)
 		}
 
-		return dataMsg{buckets: buckets, clusters: clusters, projects: projects, registryNamespaces: registryNamespaces, secrets: secrets, servers: servers, volumes: volumes, snapshots: snapshots}
+		return dataMsg{buckets: buckets, clusters: clusters, projects: projects, registryNamespaces: registryNamespaces, secrets: secrets, servers: servers, volumes: volumes, snapshots: snapshots, volumeErr: volumeErr}
 	}
 }
 

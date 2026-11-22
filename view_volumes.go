@@ -13,17 +13,33 @@ import (
 // ─────────────────────────────────────────────
 
 // volumeStateColor maps a volume/snapshot state to a palette color.
-// "available" is the healthy resting state; everything transient
-// (snapshotting, attaching, resizing, importing, ...) is yellow;
-// failures are red.
+// "available"/"in_use" are the healthy resting states; everything transient
+// (creating, deleting, snapshotting, resizing, ...) is yellow; failures are
+// red.
 func volumeStateColor(state string) color.Color {
 	switch state {
-	case "available":
+	case "available", "in_use":
 		return colGreen
 	case "error", "invalid_data":
 		return colRed
 	}
 	return colYellow
+}
+
+// volumeServerName resolves the display name of the server a volume is
+// attached to. The Block API only carries the server ID (in the volume's
+// references), so the name is looked up in the fetched server list; the
+// stored name (set for legacy Instance-API volumes) wins when present.
+func (m rootModel) volumeServerName(v volumeItem) string {
+	if v.serverName != "" {
+		return v.serverName
+	}
+	for _, s := range m.servers {
+		if s.id == v.serverID {
+			return s.name
+		}
+	}
+	return ""
 }
 
 // renderVolumes draws the Volumes & Snapshots dashboard service: a list pane
@@ -90,6 +106,18 @@ func (m rootModel) renderVolumes(totalW, height int, borderColor color.Color) st
 			} else {
 				msg = "  No snapshots match \"" + m.volFilter + "\"."
 			}
+		} else if m.volFetchErr != nil {
+			// The fetch (partially) failed: say so instead of claiming the
+			// project is empty.
+			if isVols {
+				msg = "  ✗ Volume fetch failed: " + m.volFetchErr.Error()
+			} else {
+				msg = "  ✗ Snapshot fetch failed: " + m.volFetchErr.Error()
+			}
+		}
+		msgStyle := lipgloss.NewStyle().Faint(true)
+		if m.volFetchErr != nil && m.volFilter == "" {
+			msgStyle = lipgloss.NewStyle().Foreground(colRed)
 		}
 		for si := 0; si < listH; si++ {
 			sb := ""
@@ -97,7 +125,7 @@ func (m rootModel) renderVolumes(totalW, height int, borderColor color.Color) st
 				sb = vScrollBar[si]
 			}
 			if si == 0 {
-				rows = append(rows, lipgloss.NewStyle().Faint(true).Width(listW-2-scrollW).Render(msg)+sb)
+				rows = append(rows, msgStyle.Width(listW-2-scrollW).Render(msg)+sb)
 			} else {
 				rows = append(rows, strings.Repeat(" ", listW-2-scrollW)+sb)
 			}
@@ -115,7 +143,7 @@ func (m rootModel) renderVolumes(totalW, height int, borderColor color.Color) st
 		if isVols {
 			v := vols[i]
 			name, sizeStr, typeStr, stateStr = v.name, formatBytes(int64(v.size)), v.volType, v.state // #nosec G115 -- volume sizes are far below MaxInt64
-			lastStr = v.serverName
+			lastStr = m.volumeServerName(v)
 			if lastStr == "" {
 				lastStr = "—"
 			}
@@ -213,7 +241,7 @@ func (m rootModel) renderVolumeDetail() string {
 		nameDisplay = string([]rune(nameDisplay)[:innerW-1]) + "…"
 	}
 
-	server := v.serverName
+	server := m.volumeServerName(*v)
 	if server == "" {
 		server = "—"
 	}

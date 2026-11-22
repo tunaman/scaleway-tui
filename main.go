@@ -276,6 +276,7 @@ type rootModel struct {
 	// Volumes & snapshots (dashboard) state
 	volumes            []volumeItem
 	snapshots          []snapshotItem
+	volFetchErr        error // last volume/snapshot fetch failure, shown in the pane
 	volFocus           int // 0 = volumes pane, 1 = snapshots pane
 	volCursor          int
 	volScrollY         int
@@ -600,8 +601,16 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case volumesMsg:
-		m.volumes = msg.volumes
-		m.snapshots = msg.snapshots
+		// A non-nil list is authoritative data (possibly empty); a nil list
+		// means that half could not be fetched (total failure), in which case
+		// the last known good data stays on screen next to the error note.
+		if msg.volumes != nil {
+			m.volumes = msg.volumes
+		}
+		if msg.snapshots != nil {
+			m.snapshots = msg.snapshots
+		}
+		m.volFetchErr = msg.err
 		m.loading = false
 		// Keep polling while a snapshot is being taken or a volume is
 		// transitioning (creating/attaching/...), like the server list.
@@ -704,8 +713,13 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.registryNamespaces = msg.registryNamespaces
 		m.secrets = msg.secrets
 		m.servers = msg.servers
-		m.volumes = msg.volumes
-		m.snapshots = msg.snapshots
+		if msg.volumes != nil {
+			m.volumes = msg.volumes
+		}
+		if msg.snapshots != nil {
+			m.snapshots = msg.snapshots
+		}
+		m.volFetchErr = msg.volumeErr
 		m.bucketCursor = 0
 		m.bucketScrollY = 0
 		m.bucketScrollX = 0

@@ -162,6 +162,9 @@ func (m rootModel) renderTopBar() string {
 	if m.state == stateDashboard && m.activeService == serviceVolumes {
 		rightInfo = comment(fmt.Sprintf("%d volumes / %d snapshots  ", len(m.volumes), len(m.snapshots)))
 	}
+	if m.state == stateDashboard && m.activeService == serviceVolumes && m.volFetchErr != nil {
+		rightInfo = lipgloss.NewStyle().Foreground(colRed).Render("✗ volume fetch failed  ") + rightInfo
+	}
 	if m.clipboardNote != "" {
 		rightInfo = lipgloss.NewStyle().Foreground(colGreen).Bold(true).Render("✓ "+m.clipboardNote) + rightInfo
 	}
