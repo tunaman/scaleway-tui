@@ -167,7 +167,7 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	// ── Per-service filter modes and overlays (keys_<service>.go) ──
 	if m.bucketFiltering {
-		return m.handleBucketFilterKey(msg)
+		return m.handleFilterKey(msg, &m.bucketFiltering, &m.bucketFilter, m.resetBucketFilterCursors, false)
 	}
 	if m.billingProjectOverlay {
 		return m.handleBillingProjectOverlayKey(msg)
@@ -188,28 +188,28 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.handleRegConfirmDeleteKey(msg)
 	}
 	if m.regBrowserFiltering {
-		return m.handleRegBrowserFilterKey(msg)
+		return m.handleFilterKey(msg, &m.regBrowserFiltering, &m.regBrowserFilter, m.resetRegBrowserFilterCursors, false)
 	}
 	if m.regTagFiltering {
-		return m.handleRegTagFilterKey(msg)
+		return m.handleFilterKey(msg, &m.regTagFiltering, &m.regTagFilter, m.resetRegTagFilterCursors, true)
 	}
 	if m.registryFiltering {
-		return m.handleRegistryFilterKey(msg)
+		return m.handleFilterKey(msg, &m.registryFiltering, &m.registryFilter, m.resetRegistryFilterCursors, false)
 	}
 	if m.secretFiltering {
-		return m.handleSecretFilterKey(msg)
+		return m.handleFilterKey(msg, &m.secretFiltering, &m.secretFilter, m.resetSecretFilterCursors, false)
 	}
 	if m.secBrowserFiltering {
-		return m.handleSecBrowserFilterKey(msg)
+		return m.handleFilterKey(msg, &m.secBrowserFiltering, &m.secBrowserFilter, m.resetSecBrowserFilterCursors, false)
 	}
 	if m.iamFiltering {
-		return m.handleIAMFilterKey(msg)
+		return m.handleFilterKey(msg, &m.iamFiltering, &m.iamFilter, m.resetIAMFilterCursors, false)
 	}
 	if m.instFiltering {
-		return m.handleInstFilterKey(msg)
+		return m.handleFilterKey(msg, &m.instFiltering, &m.instFilter, m.resetInstFilterCursors, false)
 	}
 	if m.volFiltering {
-		return m.handleVolFilterKey(msg)
+		return m.handleFilterKey(msg, &m.volFiltering, &m.volFilter, m.resetVolFilterCursors, false)
 	}
 	if m.secConfirmDelete {
 		return m.handleSecConfirmDeleteKey(msg)
@@ -217,12 +217,13 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	switch msg.String() {
 	case "ctrl+c", "q":
-		if m.showConfirm || m.input.active || m.secShowContent || m.instConfirmAction != instActionNone ||
-			m.upload.active || m.download.active || m.volConfirmAction != volActionNone || m.volAttachOverlay {
+		// Only confirm/transfer overlays can be active here: the input overlay
+		// swallows every key (incl. ctrl+c) while active, and the sec content
+		// and volume attach overlays quit on ctrl+c in their own intercepts.
+		if m.showConfirm || m.instConfirmAction != instActionNone ||
+			m.upload.active || m.download.active || m.volConfirmAction != volActionNone {
 			// Dismiss overlays rather than quitting.
 			m.showConfirm = false
-			m.input.active = false
-			m.secShowContent = false
 			m.instConfirmAction = instActionNone
 			m.instConfirmServerID = ""
 			m.instConfirmServerName = ""
@@ -232,7 +233,6 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.volConfirmName = ""
 			m.volConfirmServerID = ""
 			m.volConfirmServerName = ""
-			m.volAttachOverlay = false
 			return m, nil
 		}
 		return m, tea.Quit
@@ -241,33 +241,9 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			// Transfers can't be interrupted — the overlay closes itself.
 			return m, nil
 		}
-		if m.secShowContent {
-			m.secShowContent = false
-			m.secContent = ""
-			return m, nil
-		}
 		if m.showConfirm {
 			m.showConfirm = false
 			m.confirmItems = nil
-			return m, nil
-		}
-		// Dismiss tag action overlay.
-		if m.regTagActionOverlay {
-			m.regTagActionOverlay = false
-			return m, nil
-		}
-		// Dismiss registry tag delete confirm.
-		if m.regConfirmDeleteTags {
-			m.regConfirmDeleteTags = false
-			m.regConfirmTagsToDelete = nil
-			return m, nil
-		}
-		// Clear tag filter if active.
-		if m.regTagFiltering {
-			m.regTagFiltering = false
-			m.regTagFilter = ""
-			m.regBrowserTagCursor = 0
-			m.regBrowserTagScrollY = 0
 			return m, nil
 		}
 		if m.regTagFilter != "" {
@@ -322,11 +298,6 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.iamFilter = ""
 			m.iamCursor = 0
 			m.iamScrollY = 0
-			return m, nil
-		}
-		// Dismiss volume attach overlay.
-		if m.volAttachOverlay {
-			m.volAttachOverlay = false
 			return m, nil
 		}
 		// Dismiss volume/snapshot action confirm.
@@ -613,6 +584,53 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		if m.state == stateRegistryBrowser && m.regBrowserFocus == 1 && !m.regTagsLoading {
 			return m.registryTagSelectAllKey()
+		}
+	}
+	return m, nil
+}
+
+// ─────────────────────────────────────────────
+// Shared inline-filter handler
+//
+// All nine list filter modes (bucket, registry namespace/browser/tag, secret
+// dashboard/browser, IAM, instances, volumes) share this handler: active and
+// filter bind the mode's fields, reset zeroes the list's cursor(s)/scroll
+// (pointer receiver, so it mutates the model handleKey returns), and
+// quitOnCtrlC mirrors the historical per-mode behaviour — only the registry
+// tag filter quits on ctrl+c.
+// ─────────────────────────────────────────────
+
+func (m rootModel) handleFilterKey(msg tea.KeyPressMsg, active *bool, filter *string, reset func(), quitOnCtrlC bool) (rootModel, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		*active = false
+		*filter = ""
+		reset()
+	case "enter":
+		// Lock in the first match and exit filter mode.
+		*active = false
+		reset()
+	case "backspace", "ctrl+h":
+		if len([]rune(*filter)) > 0 {
+			runes := []rune(*filter)
+			*filter = string(runes[:len(runes)-1])
+		} else {
+			// Empty filter + backspace → exit filter mode.
+			*active = false
+		}
+		reset()
+	case "up":
+		return m.handleUp()
+	case "down":
+		return m.handleDown()
+	case "ctrl+c":
+		if quitOnCtrlC {
+			return m, tea.Quit
+		}
+	default:
+		if msg.Text != "" {
+			*filter += msg.Text
+			reset()
 		}
 	}
 	return m, nil

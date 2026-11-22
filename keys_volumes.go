@@ -15,42 +15,13 @@ func defaultSnapshotName(volName string) string {
 	return "snap-" + volName + "-" + time.Now().Format("20060102")
 }
 
-// handleVolFilterKey handles keys while the volumes/snapshots filter is active.
-func (m rootModel) handleVolFilterKey(msg tea.KeyPressMsg) (rootModel, tea.Cmd) {
-	resetCursor := func() {
-		m.volCursor = 0
-		m.volScrollY = 0
-		m.volSnapCursor = 0
-		m.volSnapScrollY = 0
-	}
-	switch msg.String() {
-	case "esc":
-		m.volFiltering = false
-		m.volFilter = ""
-		resetCursor()
-	case "enter":
-		m.volFiltering = false
-		resetCursor()
-	case "backspace", "ctrl+h":
-		if len([]rune(m.volFilter)) > 0 {
-			runes := []rune(m.volFilter)
-			m.volFilter = string(runes[:len(runes)-1])
-		} else {
-			// Empty filter + backspace → exit filter mode.
-			m.volFiltering = false
-		}
-		resetCursor()
-	case "up":
-		return m.handleUp()
-	case "down":
-		return m.handleDown()
-	default:
-		if msg.Text != "" {
-			m.volFilter += msg.Text
-			resetCursor()
-		}
-	}
-	return m, nil
+// resetVolFilterCursors zeroes both pane cursors/scroll for the shared
+// filter handler (handleFilterKey).
+func (m *rootModel) resetVolFilterCursors() {
+	m.volCursor = 0
+	m.volScrollY = 0
+	m.volSnapCursor = 0
+	m.volSnapScrollY = 0
 }
 
 // handleVolAttachOverlayKey handles the attach server picker overlay.

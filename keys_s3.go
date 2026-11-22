@@ -8,41 +8,11 @@ import (
 // Key handling — Object Storage (dashboard + object browser)
 // ─────────────────────────────────────────────
 
-// handleBucketFilterKey handles keys while the bucket list filter is active.
-func (m rootModel) handleBucketFilterKey(msg tea.KeyPressMsg) (rootModel, tea.Cmd) {
-	switch msg.String() {
-	case "esc":
-		m.bucketFiltering = false
-		m.bucketFilter = ""
-		m.bucketCursor = 0
-		m.bucketScrollY = 0
-	case "enter":
-		// Lock in the first match and exit filter mode.
-		m.bucketFiltering = false
-		m.bucketCursor = 0
-		m.bucketScrollY = 0
-	case "backspace", "ctrl+h":
-		if len([]rune(m.bucketFilter)) > 0 {
-			runes := []rune(m.bucketFilter)
-			m.bucketFilter = string(runes[:len(runes)-1])
-		} else {
-			// Empty filter + backspace → exit filter mode.
-			m.bucketFiltering = false
-		}
-		m.bucketCursor = 0
-		m.bucketScrollY = 0
-	case "up":
-		return m.handleUp()
-	case "down":
-		return m.handleDown()
-	default:
-		if msg.Text != "" {
-			m.bucketFilter += msg.Text
-			m.bucketCursor = 0
-			m.bucketScrollY = 0
-		}
-	}
-	return m, nil
+// resetBucketFilterCursors zeroes the bucket list cursor/scroll for the
+// shared filter handler (handleFilterKey).
+func (m *rootModel) resetBucketFilterCursors() {
+	m.bucketCursor = 0
+	m.bucketScrollY = 0
 }
 
 // bucketStartFilterKey begins inline filtering of the bucket list.
