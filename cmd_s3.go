@@ -81,10 +81,7 @@ func (m rootModel) fetchData() tea.Cmd {
 
 		// ── Clusters ──
 		k8sAPI := k8s.NewAPI(m.scwClient)
-		region := scw.Region(m.activeRegion)
-		if region == "" {
-			region = scw.RegionNlAms
-		}
+		region := m.region()
 		kReq := &k8s.ListClustersRequest{Region: region}
 		if m.projectID != "" {
 			kReq.ProjectID = &m.projectID
@@ -288,12 +285,8 @@ func (m rootModel) createBucket(name string) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		region := m.activeRegion
-		if region == "" {
-			region = "nl-ams"
-		}
 		if err := m.minioClient.MakeBucket(ctx, name, minio.MakeBucketOptions{
-			Region: region,
+			Region: string(m.region()),
 		}); err != nil {
 			return errMsg{fmt.Errorf("create bucket: %w", err)}
 		}

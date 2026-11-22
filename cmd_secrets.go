@@ -15,10 +15,7 @@ import (
 func (m rootModel) fetchSecretVersions(s secretItem) tea.Cmd {
 	return func() tea.Msg {
 		api := secret.NewAPI(m.scwClient)
-		region := scw.Region(m.activeRegion)
-		if region == "" {
-			region = scw.RegionNlAms
-		}
+		region := m.region()
 		req := &secret.ListSecretVersionsRequest{
 			Region:   region,
 			SecretID: s.id,
@@ -60,10 +57,7 @@ func (m rootModel) fetchSecretVersions(s secretItem) tea.Cmd {
 func (m rootModel) accessSecretVersion(secretID string, revision uint32) tea.Cmd {
 	return func() tea.Msg {
 		api := secret.NewAPI(m.scwClient)
-		region := scw.Region(m.activeRegion)
-		if region == "" {
-			region = scw.RegionNlAms
-		}
+		region := m.region()
 		rev := fmt.Sprintf("%d", revision)
 		resp, err := api.AccessSecretVersion(&secret.AccessSecretVersionRequest{
 			Region:   region,
@@ -80,10 +74,7 @@ func (m rootModel) accessSecretVersion(secretID string, revision uint32) tea.Cmd
 func (m rootModel) createSecretVersion(secretID, data string) tea.Cmd {
 	return func() tea.Msg {
 		api := secret.NewAPI(m.scwClient)
-		region := scw.Region(m.activeRegion)
-		if region == "" {
-			region = scw.RegionNlAms
-		}
+		region := m.region()
 		_, err := api.CreateSecretVersion(&secret.CreateSecretVersionRequest{
 			Region:   region,
 			SecretID: secretID,
@@ -99,10 +90,7 @@ func (m rootModel) createSecretVersion(secretID, data string) tea.Cmd {
 func (m rootModel) deleteSecret(id string) tea.Cmd {
 	return func() tea.Msg {
 		api := secret.NewAPI(m.scwClient)
-		region := scw.Region(m.activeRegion)
-		if region == "" {
-			region = scw.RegionNlAms
-		}
+		region := m.region()
 		err := api.DeleteSecret(&secret.DeleteSecretRequest{
 			Region:   region,
 			SecretID: id,
@@ -117,10 +105,7 @@ func (m rootModel) deleteSecret(id string) tea.Cmd {
 func (m rootModel) createSecret(name string) tea.Cmd {
 	return func() tea.Msg {
 		api := secret.NewAPI(m.scwClient)
-		region := scw.Region(m.activeRegion)
-		if region == "" {
-			region = scw.RegionNlAms
-		}
+		region := m.region()
 		projectID := m.projectID
 		_, err := api.CreateSecret(&secret.CreateSecretRequest{
 			Region:    region,
@@ -137,10 +122,7 @@ func (m rootModel) createSecret(name string) tea.Cmd {
 func (m rootModel) updateSecretVersionDesc(secretID string, revision uint32, desc string) tea.Cmd {
 	return func() tea.Msg {
 		api := secret.NewAPI(m.scwClient)
-		region := scw.Region(m.activeRegion)
-		if region == "" {
-			region = scw.RegionNlAms
-		}
+		region := m.region()
 		rev := fmt.Sprintf("%d", revision)
 		_, err := api.UpdateSecretVersion(&secret.UpdateSecretVersionRequest{
 			Region:      region,

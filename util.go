@@ -273,6 +273,18 @@ func hasTransientServer(servers []instanceServer) bool {
 }
 
 // ─────────────────────────────────────────────
+// Region helpers
+// ─────────────────────────────────────────────
+
+// region returns the active region, falling back to nl-ams when unset.
+func (m rootModel) region() scw.Region {
+	if m.activeRegion == "" {
+		return scw.RegionNlAms
+	}
+	return scw.Region(m.activeRegion)
+}
+
+// ─────────────────────────────────────────────
 // Billing helpers
 // ─────────────────────────────────────────────
 

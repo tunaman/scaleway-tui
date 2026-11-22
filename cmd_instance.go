@@ -45,7 +45,7 @@ func (m rootModel) listServersAllZones() ([]instanceServer, error) {
 	var servers []instanceServer
 	var firstErr error
 	reqsOK := 0
-	for _, zone := range regionZones(m.activeRegion) {
+	for _, zone := range regionZones(string(m.region())) {
 		for _, state := range allServerStates {
 			var zoneServers []*instance.Server
 			var page int32 = 1
