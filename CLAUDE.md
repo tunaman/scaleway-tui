@@ -29,7 +29,8 @@ The codebase is a single Go package (`package main`) split across these files:
 | `main.go` | Constants, Dracula palette, `rootModel` struct (incl. billing + org state), `Init`, `Update`, `View`, `main` |
 | `types.go` | All data structs and tea message types |
 | `config.go` | `tuiConfig`, `loadTUIConfig`, `saveTUIConfig`, `buildClients` |
-| `keys.go` | `handleKey`, `handleEsc`, `handleUp`, `handleDown`, `handleEnter`, `activateProfile`, `copyToClipboard` (OSC 52 copy via `tea.SetClipboard` + top-bar note) |
+| `keys.go` | Central key dispatcher: `handleKey` (input overlay + per-service filter/overlay intercepts + key routing), `handleEsc`/`handleUp`/`handleDown`/`handleEnter` state dispatchers, `copyToClipboard` (OSC 52 copy via `tea.SetClipboard` + top-bar note) |
+| `keys_*.go` | Per-service key handlers (`keys_picker.go` incl. `activateProfile`, `keys_dashboard.go` incl. nav + dashboard-content dispatch, `keys_s3.go`, `keys_k8s.go`, `keys_instance.go`, `keys_volumes.go` incl. `defaultSnapshotName`, `keys_billing.go`, `keys_registry.go`, `keys_secrets.go`, `keys_iam.go`) |
 | `filter.go` | `filteredBuckets/RegistryImages/RegistryTags/RegistryNamespaces/Secrets/SecretVersions`, `maybeCalculateSize` |
 | `util.go` | `panelBox`, `padRight`, `renderVScrollBar`, `formatBytes`, `formatEuroShort`, `parentPrefix`, `expandHome`, `safeRelPath`, `prevMonth`, `nextMonth`, `moneyToFloat`, `min`, `max` |
 | `cmd_s3.go` | `fetchData`, `calculateSize`, `fetchBucketContents`, `createBucket/Folder`, `uploadFile`, `downloadFiles` (multi-file, `.part` temp + rename), `deleteEntries`, `progressReader` |

@@ -40,4 +40,4 @@ CI (`.github/workflows/ci.yml`) runs a `lint` job (go vet + golangci-lint) and a
 
 **Adding a new service:** add a `service*` constant (`main.go`), extend `rootModel`, add a dashboard nav entry + preview pane (`view_dashboard.go`), create `cmd_<svc>.go` (fetch ops as `tea.Cmd`s) and `view_<svc>.go` (rendering), wire keys in `keys.go`, and document keys in README.md.
 
-**Adding a key action:** handle it in `handleKey()` in `keys.go` (input overlay and overlays intercept first), and add a row to the README key table.
+**Adding a key action:** route it in `handleKey()` in `keys.go` (input overlay and overlays intercept first) and implement the handler in the owning service's `keys_<service>.go`, then add a row to the README key table.

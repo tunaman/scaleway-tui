@@ -8,13 +8,13 @@ import (
 )
 
 // ─────────────────────────────────────────────
-// Key handling
+// Key handling — central dispatcher
+//
+// handleKey() intercepts the input overlay and per-service filter/overlay
+// modes, then routes each key to the owning service. The per-service
+// handlers live in keys_<service>.go (s3, k8s, instance, volumes, billing,
+// registry, secrets, iam, picker, dashboard).
 // ─────────────────────────────────────────────
-
-// defaultSnapshotName builds a suggested snapshot name: snap-<volname>-<date>.
-func defaultSnapshotName(volName string) string {
-	return "snap-" + volName + "-" + time.Now().Format("20060102")
-}
 
 func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// ── Input overlay: intercept all keys while active ──
@@ -164,489 +164,55 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	// ── Filter mode: intercept all printable keys ──
+
+	// ── Per-service filter modes and overlays (keys_<service>.go) ──
 	if m.bucketFiltering {
-		switch msg.String() {
-		case "esc":
-			m.bucketFiltering = false
-			m.bucketFilter = ""
-			m.bucketCursor = 0
-			m.bucketScrollY = 0
-		case "enter":
-			// Lock in the first match and exit filter mode.
-			m.bucketFiltering = false
-			m.bucketCursor = 0
-			m.bucketScrollY = 0
-		case "backspace", "ctrl+h":
-			if len([]rune(m.bucketFilter)) > 0 {
-				runes := []rune(m.bucketFilter)
-				m.bucketFilter = string(runes[:len(runes)-1])
-			} else {
-				// Empty filter + backspace → exit filter mode.
-				m.bucketFiltering = false
-			}
-			m.bucketCursor = 0
-			m.bucketScrollY = 0
-		case "up":
-			return m.handleUp()
-		case "down":
-			return m.handleDown()
-		default:
-			if msg.Text != "" {
-				m.bucketFilter += msg.Text
-				m.bucketCursor = 0
-				m.bucketScrollY = 0
-			}
-		}
-		return m, nil
+		return m.handleBucketFilterKey(msg)
 	}
-	// ── Billing project picker overlay ──
 	if m.billingProjectOverlay {
-		total := len(m.projects) + 1 // 0=all, 1..n=project
-		switch msg.String() {
-		case "ctrl+c":
-			return m, tea.Quit
-		case "esc":
-			m.billingProjectOverlay = false
-		case "up", "k":
-			if m.billingProjectCursor > 0 {
-				m.billingProjectCursor--
-			}
-		case "down", "j":
-			if m.billingProjectCursor < total-1 {
-				m.billingProjectCursor++
-			}
-		case "enter":
-			m.billingProjectOverlay = false
-			if m.billingProjectCursor != m.billingProjectIdx {
-				m.billingProjectIdx = m.billingProjectCursor
-				m.loading = true
-				m.billingExportMsg = ""
-				return m, tea.Batch(m.spin.Tick, m.fetchBillingOverview(m.billingPeriod))
-			}
-		}
-		return m, nil
+		return m.handleBillingProjectOverlayKey(msg)
 	}
-
-	// ── Billing export date picker overlay ──
 	if m.billingExportOverlay {
-		switch msg.String() {
-		case "ctrl+c":
-			return m, tea.Quit
-		case "esc":
-			m.billingExportOverlay = false
-		case "tab":
-			m.billingExportField = 1 - m.billingExportField
-		case "left", "h":
-			if m.billingExportField == 0 {
-				m.billingExportFrom = prevMonth(m.billingExportFrom)
-			} else {
-				prev := prevMonth(m.billingExportTo)
-				if prev >= m.billingExportFrom {
-					m.billingExportTo = prev
-				}
-			}
-		case "right", "l":
-			now := time.Now().Format("2006-01")
-			if m.billingExportField == 0 {
-				next := nextMonth(m.billingExportFrom)
-				if next <= m.billingExportTo {
-					m.billingExportFrom = next
-				}
-			} else {
-				next := nextMonth(m.billingExportTo)
-				if next <= now {
-					m.billingExportTo = next
-				}
-			}
-		case "enter":
-			m.billingExportOverlay = false
-			m.loading = true
-			m.billingExportMsg = ""
-			return m, tea.Batch(m.spin.Tick, m.exportBillingCSV(m.billingExportFrom, m.billingExportTo))
-		}
-		return m, nil
+		return m.handleBillingExportOverlayKey(msg)
 	}
-
-	// ── Volume attach server picker overlay ──
 	if m.volAttachOverlay {
-		total := len(m.attachServersInZone())
-		switch msg.String() {
-		case "ctrl+c":
-			return m, tea.Quit
-		case "esc":
-			m.volAttachOverlay = false
-		case "up", "k":
-			if m.volAttachCursor > 0 {
-				m.volAttachCursor--
-			}
-		case "down", "j":
-			if m.volAttachCursor < total-1 {
-				m.volAttachCursor++
-			}
-		case "enter":
-			servers := m.attachServersInZone()
-			if len(servers) > 0 && m.volAttachCursor < len(servers) {
-				vol := m.volAttachVolume
-				m.volAttachOverlay = false
-				// Confirm before the mutating call.
-				m.volConfirmAction = volActionAttach
-				m.volConfirmID = vol.id
-				m.volConfirmName = vol.name
-				m.volConfirmServerID = servers[m.volAttachCursor].id
-				m.volConfirmServerName = servers[m.volAttachCursor].name
-			}
-		}
-		return m, nil
+		return m.handleVolAttachOverlayKey(msg)
 	}
-
-	// ── Secret content overlay: C copies, any other key closes ──
 	if m.secShowContent {
-		switch msg.String() {
-		case "ctrl+c":
-			return m, tea.Quit
-		case "c", "C":
-			return m.copyToClipboard(m.secContent)
-		default:
-			m.secShowContent = false
-			m.secContent = ""
-		}
-		return m, nil
+		return m.handleSecShowContentKey(msg)
 	}
-
-	// ── Tag action overlay: pull instructions (C copies the command) ──
 	if m.regTagActionOverlay {
-		switch msg.String() {
-		case "ctrl+c":
-			return m, tea.Quit
-		case "c", "C":
-			if cmd := m.registryPullCommand(); cmd != "" {
-				return m.copyToClipboard(cmd)
-			}
-		default:
-			m.regTagActionOverlay = false
-		}
-		return m, nil
+		return m.handleRegTagActionOverlayKey(msg)
 	}
-
-	// ── Tag delete confirm ──
 	if m.regConfirmDeleteTags {
-		switch msg.String() {
-		case "ctrl+c":
-			return m, tea.Quit
-		case "y", "Y":
-			imageID := m.regConfirmDeleteImgID
-			tags := m.regConfirmTagsToDelete
-			m.regConfirmDeleteTags = false
-			m.regConfirmTagsToDelete = nil
-			m.loading = true
-			return m, tea.Batch(m.spin.Tick, m.deleteRegistryTags(imageID, tags))
-		default:
-			m.regConfirmDeleteTags = false
-			m.regConfirmTagsToDelete = nil
-		}
-		return m, nil
+		return m.handleRegConfirmDeleteKey(msg)
 	}
-
-	// ── Registry browser filter mode ──
 	if m.regBrowserFiltering {
-		switch msg.String() {
-		case "esc":
-			m.regBrowserFiltering = false
-			m.regBrowserFilter = ""
-			m.regBrowserCursor = 0
-			m.regBrowserScrollY = 0
-		case "enter":
-			m.regBrowserFiltering = false
-			m.regBrowserCursor = 0
-			m.regBrowserScrollY = 0
-		case "backspace", "ctrl+h":
-			if len([]rune(m.regBrowserFilter)) > 0 {
-				runes := []rune(m.regBrowserFilter)
-				m.regBrowserFilter = string(runes[:len(runes)-1])
-			} else {
-				m.regBrowserFiltering = false
-			}
-			m.regBrowserCursor = 0
-			m.regBrowserScrollY = 0
-		case "up":
-			return m.handleUp()
-		case "down":
-			return m.handleDown()
-		default:
-			if msg.Text != "" {
-				m.regBrowserFilter += msg.Text
-				m.regBrowserCursor = 0
-				m.regBrowserScrollY = 0
-			}
-		}
-		return m, nil
+		return m.handleRegBrowserFilterKey(msg)
 	}
-	// ── Registry tag filter mode ──
 	if m.regTagFiltering {
-		switch msg.String() {
-		case "ctrl+c":
-			return m, tea.Quit
-		case "esc":
-			m.regTagFiltering = false
-			m.regTagFilter = ""
-			m.regBrowserTagCursor = 0
-			m.regBrowserTagScrollY = 0
-		case "enter":
-			m.regTagFiltering = false
-			m.regBrowserTagCursor = 0
-			m.regBrowserTagScrollY = 0
-		case "backspace", "ctrl+h":
-			if len([]rune(m.regTagFilter)) > 0 {
-				runes := []rune(m.regTagFilter)
-				m.regTagFilter = string(runes[:len(runes)-1])
-			} else {
-				m.regTagFiltering = false
-			}
-			m.regBrowserTagCursor = 0
-			m.regBrowserTagScrollY = 0
-		case "up":
-			return m.handleUp()
-		case "down":
-			return m.handleDown()
-		default:
-			if msg.Text != "" {
-				m.regTagFilter += msg.Text
-				m.regBrowserTagCursor = 0
-				m.regBrowserTagScrollY = 0
-			}
-		}
-		return m, nil
+		return m.handleRegTagFilterKey(msg)
 	}
-	// ── Registry filter mode ──
 	if m.registryFiltering {
-		switch msg.String() {
-		case "esc":
-			m.registryFiltering = false
-			m.registryFilter = ""
-			m.registryCursor = 0
-			m.registryScrollY = 0
-		case "enter":
-			m.registryFiltering = false
-			m.registryCursor = 0
-			m.registryScrollY = 0
-		case "backspace", "ctrl+h":
-			if len([]rune(m.registryFilter)) > 0 {
-				runes := []rune(m.registryFilter)
-				m.registryFilter = string(runes[:len(runes)-1])
-			} else {
-				m.registryFiltering = false
-			}
-			m.registryCursor = 0
-			m.registryScrollY = 0
-		case "up":
-			return m.handleUp()
-		case "down":
-			return m.handleDown()
-		default:
-			if msg.Text != "" {
-				m.registryFilter += msg.Text
-				m.registryCursor = 0
-				m.registryScrollY = 0
-			}
-		}
-		return m, nil
+		return m.handleRegistryFilterKey(msg)
 	}
-	// ── Secrets dashboard filter mode ──
 	if m.secretFiltering {
-		switch msg.String() {
-		case "esc":
-			m.secretFiltering = false
-			m.secretFilter = ""
-			m.secretCursor = 0
-			m.secretScrollY = 0
-		case "enter":
-			m.secretFiltering = false
-			m.secretCursor = 0
-			m.secretScrollY = 0
-		case "backspace", "ctrl+h":
-			if len([]rune(m.secretFilter)) > 0 {
-				runes := []rune(m.secretFilter)
-				m.secretFilter = string(runes[:len(runes)-1])
-			} else {
-				m.secretFiltering = false
-			}
-			m.secretCursor = 0
-			m.secretScrollY = 0
-		case "up":
-			return m.handleUp()
-		case "down":
-			return m.handleDown()
-		default:
-			if msg.Text != "" {
-				m.secretFilter += msg.Text
-				m.secretCursor = 0
-				m.secretScrollY = 0
-			}
-		}
-		return m, nil
+		return m.handleSecretFilterKey(msg)
 	}
-	// ── Secrets browser filter mode ──
 	if m.secBrowserFiltering {
-		switch msg.String() {
-		case "esc":
-			m.secBrowserFiltering = false
-			m.secBrowserFilter = ""
-			m.secBrowserCursor = 0
-			m.secBrowserScrollY = 0
-		case "enter":
-			m.secBrowserFiltering = false
-			m.secBrowserCursor = 0
-			m.secBrowserScrollY = 0
-		case "backspace", "ctrl+h":
-			if len([]rune(m.secBrowserFilter)) > 0 {
-				runes := []rune(m.secBrowserFilter)
-				m.secBrowserFilter = string(runes[:len(runes)-1])
-			} else {
-				m.secBrowserFiltering = false
-			}
-			m.secBrowserCursor = 0
-			m.secBrowserScrollY = 0
-		case "up":
-			return m.handleUp()
-		case "down":
-			return m.handleDown()
-		default:
-			if msg.Text != "" {
-				m.secBrowserFilter += msg.Text
-				m.secBrowserCursor = 0
-				m.secBrowserScrollY = 0
-			}
-		}
-		return m, nil
+		return m.handleSecBrowserFilterKey(msg)
 	}
-
-	// ── IAM browser filter mode ──
 	if m.iamFiltering {
-		switch msg.String() {
-		case "esc":
-			m.iamFiltering = false
-			m.iamFilter = ""
-			m.iamCursor = 0
-			m.iamScrollY = 0
-		case "enter":
-			m.iamFiltering = false
-			m.iamCursor = 0
-			m.iamScrollY = 0
-		case "backspace", "ctrl+h":
-			if len([]rune(m.iamFilter)) > 0 {
-				runes := []rune(m.iamFilter)
-				m.iamFilter = string(runes[:len(runes)-1])
-			} else {
-				m.iamFiltering = false
-			}
-			m.iamCursor = 0
-			m.iamScrollY = 0
-		case "up":
-			return m.handleUp()
-		case "down":
-			return m.handleDown()
-		default:
-			if msg.Text != "" {
-				m.iamFilter += msg.Text
-				m.iamCursor = 0
-				m.iamScrollY = 0
-			}
-		}
-		return m, nil
+		return m.handleIAMFilterKey(msg)
 	}
-
-	// ── Instances filter mode ──
 	if m.instFiltering {
-		switch msg.String() {
-		case "esc":
-			m.instFiltering = false
-			m.instFilter = ""
-			m.instCursor = 0
-			m.instScrollY = 0
-		case "enter":
-			m.instFiltering = false
-			m.instCursor = 0
-			m.instScrollY = 0
-		case "backspace", "ctrl+h":
-			if len([]rune(m.instFilter)) > 0 {
-				runes := []rune(m.instFilter)
-				m.instFilter = string(runes[:len(runes)-1])
-			} else {
-				m.instFiltering = false
-			}
-			m.instCursor = 0
-			m.instScrollY = 0
-		case "up":
-			return m.handleUp()
-		case "down":
-			return m.handleDown()
-		default:
-			if msg.Text != "" {
-				m.instFilter += msg.Text
-				m.instCursor = 0
-				m.instScrollY = 0
-			}
-		}
-		return m, nil
+		return m.handleInstFilterKey(msg)
 	}
-
-	// ── Volumes & snapshots filter mode ──
 	if m.volFiltering {
-		resetCursor := func() {
-			m.volCursor = 0
-			m.volScrollY = 0
-			m.volSnapCursor = 0
-			m.volSnapScrollY = 0
-		}
-		switch msg.String() {
-		case "esc":
-			m.volFiltering = false
-			m.volFilter = ""
-			resetCursor()
-		case "enter":
-			m.volFiltering = false
-			resetCursor()
-		case "backspace", "ctrl+h":
-			if len([]rune(m.volFilter)) > 0 {
-				runes := []rune(m.volFilter)
-				m.volFilter = string(runes[:len(runes)-1])
-			} else {
-				// Empty filter + backspace → exit filter mode.
-				m.volFiltering = false
-			}
-			resetCursor()
-		case "up":
-			return m.handleUp()
-		case "down":
-			return m.handleDown()
-		default:
-			if msg.Text != "" {
-				m.volFilter += msg.Text
-				resetCursor()
-			}
-		}
-		return m, nil
+		return m.handleVolFilterKey(msg)
 	}
-
-	// ── Secret delete confirm ──
 	if m.secConfirmDelete {
-		switch msg.String() {
-		case "ctrl+c":
-			return m, tea.Quit
-		case "y", "Y":
-			id := m.secConfirmDeleteID
-			m.secConfirmDelete = false
-			m.secConfirmDeleteID = ""
-			m.secConfirmDeleteName = ""
-			m.loading = true
-			return m, tea.Batch(m.spin.Tick, m.deleteSecret(id))
-		default:
-			m.secConfirmDelete = false
-			m.secConfirmDeleteID = ""
-			m.secConfirmDeleteName = ""
-		}
-		return m, nil
+		return m.handleSecConfirmDeleteKey(msg)
 	}
 
 	switch msg.String() {
@@ -832,470 +398,167 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(m.spin.Tick, m.fetchData())
 		}
 	case "e", "E":
-		if m.state == stateDashboard && m.activeService == serviceBilling && !m.loading && !m.billingExportOverlay {
-			m.billingExportFrom = time.Now().AddDate(0, -11, 0).Format("2006-01")
-			m.billingExportTo = time.Now().Format("2006-01")
-			m.billingExportField = 0
-			m.billingExportOverlay = true
-		}
+		return m.billingExportKey()
 	case "p", "P":
-		if m.state == stateDashboard && m.activeService == serviceBilling && !m.loading {
-			m.billingProjectOverlay = true
-			m.billingProjectCursor = m.billingProjectIdx
-		}
+		return m.billingProjectKey()
 	case "/":
 		if m.state == stateDashboard && m.focus == focusContent && m.activeService == serviceInstance {
-			m.instFiltering = true
-			m.instFilter = ""
-			m.instCursor = 0
-			m.instScrollY = 0
+			return m.instanceStartFilterKey()
 		}
 		if m.state == stateDashboard && m.focus == focusContent && m.activeService == serviceObjectStorage {
-			m.bucketFiltering = true
-			m.bucketFilter = ""
-			m.bucketCursor = 0
-			m.bucketScrollY = 0
+			return m.bucketStartFilterKey()
 		}
 		if m.state == stateDashboard && m.focus == focusContent && m.activeService == serviceRegistry {
-			m.registryFiltering = true
-			m.registryFilter = ""
-			m.registryCursor = 0
-			m.registryScrollY = 0
+			return m.registryStartFilterKey()
 		}
 		if m.state == stateDashboard && m.focus == focusContent && m.activeService == serviceSecrets {
-			m.secretFiltering = true
-			m.secretFilter = ""
-			m.secretCursor = 0
-			m.secretScrollY = 0
+			return m.secretsStartFilterKey()
 		}
 		if m.state == stateDashboard && m.focus == focusContent && m.activeService == serviceVolumes {
-			m.volFiltering = true
-			m.volFilter = ""
-			m.volCursor = 0
-			m.volScrollY = 0
-			m.volSnapCursor = 0
-			m.volSnapScrollY = 0
+			return m.volumesStartFilterKey()
 		}
 		if m.state == stateSecretsBrowser && !m.loading {
-			m.secBrowserFiltering = true
-			m.secBrowserFilter = ""
-			m.secBrowserCursor = 0
-			m.secBrowserScrollY = 0
+			return m.secretsBrowserStartFilterKey()
 		}
 		if m.state == stateIAMBrowser && !m.loading {
-			m.iamFiltering = true
-			m.iamFilter = ""
-			m.iamCursor = 0
-			m.iamScrollY = 0
+			return m.iamStartFilterKey()
 		}
 		if m.state == stateRegistryBrowser && m.regBrowserFocus == 1 && !m.loading {
-			m.regTagFiltering = true
-			m.regTagFilter = ""
-			m.regBrowserTagCursor = 0
-			m.regBrowserTagScrollY = 0
-			return m, nil
+			return m.regTagStartFilterKey()
 		}
 		if m.state == stateRegistryBrowser && m.regBrowserFocus == 0 {
-			m.regBrowserFiltering = true
-			m.regBrowserFilter = ""
-			m.regBrowserCursor = 0
-			m.regBrowserScrollY = 0
+			return m.regBrowserStartFilterKey()
 		}
 	case "y", "Y":
 		if m.showConfirm {
-			items := m.confirmItems
-			bucket := m.browserBucket
-			prefix := m.browserPrefix
-			m.showConfirm = false
-			m.confirmItems = nil
-			m.loading = true
-			return m, tea.Batch(m.spin.Tick, m.deleteEntries(bucket, prefix, items))
+			return m.s3DeleteConfirmYes()
 		}
 		if m.regConfirmDeleteTags {
-			imageID := m.regConfirmDeleteImgID
-			tags := m.regConfirmTagsToDelete
-			m.regConfirmDeleteTags = false
-			m.regConfirmTagsToDelete = nil
-			m.loading = true
-			return m, tea.Batch(m.spin.Tick, m.deleteRegistryTags(imageID, tags))
+			return m.registryTagDeleteConfirmYes()
 		}
 		if m.state == stateK8sBrowser && m.k8sConfirmReboot {
-			m.k8sConfirmReboot = false
-			m.loading = true
-			return m, tea.Batch(m.spin.Tick, m.rebootNode(m.k8sRebootNodeID, m.k8sBrowserCluster.region))
+			return m.k8sRebootConfirmYes()
 		}
 		if m.state == stateK8sBrowser && m.k8sConfirmReplace {
-			m.k8sConfirmReplace = false
-			m.loading = true
-			return m, tea.Batch(m.spin.Tick, m.replaceNode(m.k8sReplaceNodeID, m.k8sBrowserCluster.region))
+			return m.k8sReplaceConfirmYes()
 		}
 		if m.state == stateDashboard && m.activeService == serviceInstance && m.instConfirmAction != instActionNone {
-			action := instanceActionAPI[m.instConfirmAction]
-			id := m.instConfirmServerID
-			zone := m.instConfirmServerZone
-			m.instConfirmAction = instActionNone
-			m.instConfirmServerID = ""
-			m.instConfirmServerName = ""
-			m.instConfirmServerZone = ""
-			m.loading = true
-			return m, tea.Batch(m.spin.Tick, m.powerServer(id, zone, action))
+			return m.instancePowerConfirmYes()
 		}
 		if m.volConfirmAction != volActionNone {
-			action := m.volConfirmAction
-			id := m.volConfirmID
-			serverID := m.volConfirmServerID
-			// Resolve the target item (zone and type ride along in it; the
-			// type decides whether the call goes to the Block or Instance API).
-			var vol volumeItem
-			var snap snapshotItem
-			for _, v := range m.volumes {
-				if v.id == id {
-					vol = v
-					break
-				}
-			}
-			if vol.id == "" {
-				for _, s := range m.snapshots {
-					if s.id == id {
-						snap = s
-						break
-					}
-				}
-			}
-			m.volConfirmAction = volActionNone
-			m.volConfirmID = ""
-			m.volConfirmName = ""
-			m.volConfirmServerID = ""
-			m.volConfirmServerName = ""
-			m.loading = true
-			var cmd tea.Cmd
-			switch action {
-			case volActionDeleteVolume:
-				cmd = m.deleteVolume(vol)
-			case volActionDeleteSnapshot:
-				cmd = m.deleteSnapshot(snap)
-			case volActionAttach:
-				cmd = m.attachVolume(vol, serverID)
-			case volActionDetach:
-				cmd = m.detachVolume(vol)
-			}
-			return m, tea.Batch(m.spin.Tick, cmd)
+			return m.volumeConfirmYes()
 		}
 		// Object browser: yank (copy) the selected entry's full S3 key.
 		if m.state == stateObjectBrowser && !m.loading && !m.showConfirm && !m.upload.active && !m.download.active {
-			if len(m.browserEntries) > 0 {
-				return m.copyToClipboard(m.browserEntries[m.browserCursor].fullKey)
-			}
+			return m.s3YankKey()
 		}
 	case "n", "N":
 		if m.instConfirmAction != instActionNone {
-			m.instConfirmAction = instActionNone
-			m.instConfirmServerID = ""
-			m.instConfirmServerName = ""
-			m.instConfirmServerZone = ""
-			return m, nil
+			return m.instancePowerConfirmNo()
 		}
 		if m.volConfirmAction != volActionNone {
-			m.volConfirmAction = volActionNone
-			m.volConfirmID = ""
-			m.volConfirmName = ""
-			m.volConfirmServerID = ""
-			m.volConfirmServerName = ""
-			return m, nil
+			return m.volumeConfirmNo()
 		}
 		if m.showConfirm {
-			m.showConfirm = false
-			m.confirmItems = nil
-			return m, nil
+			return m.s3DeleteConfirmNo()
 		}
 		if m.regConfirmDeleteTags {
 			m.regConfirmDeleteTags = false
 			m.regConfirmTagsToDelete = nil
 		}
 		if m.state == stateSecretsBrowser && !m.loading {
-			m.input.active = true
-			m.input.mode = inputModeSecretNewVersion
-			m.input.value = ""
-			m.input.cursor = 0
-			m.input.errStr = ""
+			return m.secretsNewVersionKey()
 		}
 	case "c", "C":
 		if m.loading || m.showConfirm || m.secConfirmDelete {
 			return m, nil
 		}
 		if m.state == stateDashboard && m.focus == focusContent && m.activeService == serviceObjectStorage {
-			m.input.active = true
-			m.input.mode = inputModeBucket
-			m.input.value = ""
-			m.input.cursor = 0
-			m.input.errStr = ""
+			return m.s3CreateBucketInput()
 		} else if m.state == stateObjectBrowser {
-			m.input.active = true
-			m.input.mode = inputModeFolder
-			m.input.value = ""
-			m.input.cursor = 0
-			m.input.errStr = ""
+			return m.s3CreateFolderInput()
 		} else if m.state == stateDashboard && m.focus == focusContent && m.activeService == serviceSecrets {
-			m.input.active = true
-			m.input.mode = inputModeSecret
-			m.input.value = ""
-			m.input.cursor = 0
-			m.input.errStr = ""
+			return m.secretsCreateInput()
 		} else if m.state == stateDashboard && m.focus == focusContent && m.activeService == serviceInstance {
-			// Copy the selected server's IP (public, falling back to private).
-			if s := m.selectedServer(); s != nil {
-				ip := s.publicIP
-				if ip == "" {
-					ip = s.privateIP
-				}
-				if ip != "" {
-					return m.copyToClipboard(ip)
-				}
-			}
+			return m.instanceCopyIPKey()
 		} else if m.state == stateK8sBrowser && m.k8sBrowserFocus == 1 && !m.k8sConfirmReboot && !m.k8sConfirmReplace {
-			// Copy the selected node's public IP from the nodes pane.
-			if len(m.k8sBrowserNodes) > 0 && m.k8sBrowserNodeCursor < len(m.k8sBrowserNodes) {
-				if ip := m.k8sBrowserNodes[m.k8sBrowserNodeCursor].publicIPv4; ip != "" {
-					return m.copyToClipboard(ip)
-				}
-			}
+			return m.k8sCopyNodeIPKey()
 		} else if m.state == stateIAMBrowser && m.iamTab == iamTabAPIKeys && !m.iamFiltering {
-			// Copy the selected API key's access key.
-			keys := m.filteredIAMAPIKeys()
-			if len(keys) > 0 && m.iamCursor < len(keys) {
-				return m.copyToClipboard(keys[m.iamCursor].accessKey)
-			}
+			return m.iamCopyAccessKey()
 		}
 	case "u", "U":
 		if m.state == stateObjectBrowser && !m.loading && !m.showConfirm {
-			m.input.active = true
-			m.input.mode = inputModeUpload
-			m.input.value = ""
-			m.input.cursor = 0
-			m.input.errStr = ""
+			return m.s3UploadInput()
 		}
 		if m.state == stateSecretsBrowser && !m.loading {
-			visible := m.filteredSecretVersions()
-			if len(visible) > 0 && m.secBrowserCursor < len(visible) {
-				m.input.active = true
-				m.input.mode = inputModeSecretUpdateDesc
-				m.input.value = ""
-				m.input.cursor = 0
-				m.input.errStr = ""
-			}
+			return m.secretsUpdateDescInput()
 		}
 	case "d", "D":
 		if m.state == stateDashboard && m.activeService == serviceSecrets && m.focus == focusContent && !m.loading && !m.secConfirmDelete {
-			visible := m.filteredSecrets()
-			if len(visible) > 0 && m.secretCursor < len(visible) {
-				s := visible[m.secretCursor]
-				m.secConfirmDeleteID = s.id
-				m.secConfirmDeleteName = s.name
-				m.secConfirmDelete = true
-			}
+			return m.secretsDeleteKey()
 		}
 		if m.state == stateDashboard && m.activeService == serviceVolumes && m.focus == focusContent && !m.loading {
-			if m.volFocus == 0 {
-				// Only unattached volumes can be deleted.
-				if v := m.selectedVolume(); v != nil && v.serverID == "" {
-					m.volConfirmAction = volActionDeleteVolume
-					m.volConfirmID = v.id
-					m.volConfirmName = v.name
-				}
-			} else if s := m.selectedSnapshot(); s != nil {
-				m.volConfirmAction = volActionDeleteSnapshot
-				m.volConfirmID = s.id
-				m.volConfirmName = s.name
-			}
+			return m.volumesDeleteKey()
 		}
 		if m.state == stateObjectBrowser && !m.loading && !m.showConfirm {
-			var targets []bucketEntry
-			if len(m.browserSelected) > 0 {
-				for _, e := range m.browserEntries {
-					if m.browserSelected[e.fullKey] {
-						targets = append(targets, e)
-					}
-				}
-			} else if len(m.browserEntries) > 0 {
-				targets = []bucketEntry{m.browserEntries[m.browserCursor]}
-			}
-			if len(targets) > 0 {
-				m.confirmItems = targets
-				m.showConfirm = true
-			}
+			return m.s3DeleteKey()
 		}
 		if m.state == stateRegistryBrowser && !m.loading && !m.regTagActionOverlay && !m.regConfirmDeleteTags {
-			imgs := m.filteredRegistryImages()
-			if m.regBrowserFocus == 1 && len(imgs) > 0 && m.regBrowserCursor < len(imgs) {
-				img := imgs[m.regBrowserCursor]
-				filteredTags := m.filteredRegistryTags(img)
-				var toDelete []registryTag
-				if len(m.regTagSelected) > 0 {
-					for _, t := range filteredTags {
-						if m.regTagSelected[t.name] {
-							toDelete = append(toDelete, t)
-						}
-					}
-				} else if len(filteredTags) > 0 && m.regBrowserTagCursor < len(filteredTags) {
-					toDelete = []registryTag{filteredTags[m.regBrowserTagCursor]}
-				}
-				if len(toDelete) > 0 {
-					m.regConfirmTagsToDelete = toDelete
-					m.regConfirmDeleteImgID = img.id
-					m.regConfirmDeleteImgName = img.name
-					m.regConfirmDeleteTags = true
-				}
-			}
-			// Image-level deletion removed — only tag deletion is supported.
+			return m.registryDeleteKey()
 		}
 	case "r", "R":
 		if m.state == stateK8sBrowser && m.k8sBrowserFocus == 1 && !m.loading && !m.k8sConfirmReboot && !m.k8sConfirmReplace {
-			if len(m.k8sBrowserNodes) > 0 && m.k8sBrowserNodeCursor < len(m.k8sBrowserNodes) {
-				n := m.k8sBrowserNodes[m.k8sBrowserNodeCursor]
-				m.k8sRebootNodeID = n.id
-				m.k8sRebootNodeName = n.name
-				m.k8sConfirmReboot = true
-			}
+			return m.k8sRebootKey()
 		}
 		if m.state == stateDashboard && m.activeService == serviceInstance && !m.loading && m.instConfirmAction == instActionNone {
-			if s := m.selectedServer(); s != nil {
-				m.instConfirmAction = instActionReboot
-				m.instConfirmServerID = s.id
-				m.instConfirmServerName = s.name
-				m.instConfirmServerZone = s.zone
-			}
+			return m.instanceRebootKey()
 		}
 	case "o", "O":
-		if m.state == stateDashboard && m.activeService == serviceInstance && !m.loading && m.instConfirmAction == instActionNone {
-			if s := m.selectedServer(); s != nil {
-				m.instConfirmAction = instActionPowerOn
-				m.instConfirmServerID = s.id
-				m.instConfirmServerName = s.name
-				m.instConfirmServerZone = s.zone
-			}
-		}
+		return m.instancePowerOnKey()
 	case "s", "S":
 		if m.state == stateDashboard && m.activeService == serviceInstance && !m.loading && m.instConfirmAction == instActionNone {
-			if s := m.selectedServer(); s != nil {
-				m.instConfirmAction = instActionPowerOff
-				m.instConfirmServerID = s.id
-				m.instConfirmServerName = s.name
-				m.instConfirmServerZone = s.zone
-			}
+			return m.instancePowerOffKey()
 		}
 		// Volumes: snapshot the selected volume (name input pre-filled).
 		if m.state == stateDashboard && m.activeService == serviceVolumes && m.volFocus == 0 &&
 			m.focus == focusContent && !m.loading {
-			if v := m.selectedVolume(); v != nil {
-				m.snapTarget = *v
-				m.input.active = true
-				m.input.mode = inputModeSnapshot
-				m.input.value = defaultSnapshotName(v.name)
-				m.input.cursor = len([]rune(m.input.value))
-				m.input.errStr = ""
-			}
+			return m.volumesSnapshotKey()
 		}
 	case "x", "X":
 		// Volumes: detach the selected (attached) volume from its server.
 		if m.state == stateDashboard && m.activeService == serviceVolumes && m.volFocus == 0 &&
 			m.focus == focusContent && !m.loading {
-			if v := m.selectedVolume(); v != nil && v.serverID != "" {
-				m.volConfirmAction = volActionDetach
-				m.volConfirmID = v.id
-				m.volConfirmName = v.name
-				m.volConfirmServerID = v.serverID
-				m.volConfirmServerName = m.volumeServerName(*v)
-			}
-			return m, nil
+			return m.volumesDetachKey()
 		}
 		if m.state == stateK8sBrowser && m.k8sBrowserFocus == 1 && !m.loading && !m.k8sConfirmReboot && !m.k8sConfirmReplace {
-			if len(m.k8sBrowserNodes) > 0 && m.k8sBrowserNodeCursor < len(m.k8sBrowserNodes) {
-				n := m.k8sBrowserNodes[m.k8sBrowserNodeCursor]
-				m.k8sReplaceNodeID = n.id
-				m.k8sReplaceNodeName = n.name
-				m.k8sConfirmReplace = true
-			}
+			return m.k8sReplaceKey()
 		}
 		// Object browser: download the selected file(s), or the file under
 		// the cursor when nothing is selected.
 		if m.state == stateObjectBrowser && !m.loading && !m.showConfirm && !m.upload.active && !m.download.active {
-			var targets []bucketEntry
-			if len(m.browserSelected) > 0 {
-				for _, e := range m.browserEntries {
-					if !e.isDir && m.browserSelected[e.fullKey] {
-						targets = append(targets, e)
-					}
-				}
-			} else if len(m.browserEntries) > 0 {
-				e := m.browserEntries[m.browserCursor]
-				if !e.isDir {
-					targets = []bucketEntry{e}
-				}
-			}
-			if len(targets) > 0 {
-				m.downloadTargets = targets
-				m.input.active = true
-				m.input.mode = inputModeDownload
-				m.input.value = ""
-				m.input.cursor = 0
-				m.input.errStr = ""
-			}
+			return m.s3DownloadKey()
 		}
 	case "K":
-		// K8s browser: fetch the cluster kubeconfig and save it to
-		// ~/.kube/scw-<cluster>.yaml (top bar flashes the saved path).
-		if m.state == stateK8sBrowser && !m.loading && !m.k8sConfirmReboot && !m.k8sConfirmReplace {
-			m.loading = true
-			return m, tea.Batch(m.spin.Tick, m.fetchKubeConfig(m.k8sBrowserCluster))
-		}
+		return m.k8sKubeConfigKey()
 	case "tab":
 		if m.state == stateIAMBrowser && !m.loading {
-			m.iamTab = (m.iamTab + 1) % iamTabCount
-			m.iamCursor = 0
-			m.iamScrollY = 0
-			m.iamFilter = ""
-			m.iamFiltering = false
-			return m, nil
+			return m.iamTabNextKey()
 		}
 		if m.state == stateDashboard {
-			m.focus = focusNav + (m.focus-focusNav+1)%2
-			m.showDropdown = false
+			return m.dashboardTabKey()
 		}
 		if m.state == stateK8sBrowser && !m.loading && !m.k8sConfirmReboot {
-			if m.k8sBrowserFocus == 0 && len(m.k8sBrowserNodePools) > 0 {
-				m.k8sBrowserFocus = 1
-				m.k8sBrowserNodeCursor = 0
-				m.k8sBrowserNodeScrollY = 0
-			} else {
-				m.k8sBrowserFocus = 0
-			}
+			return m.k8sTabKey()
 		}
 		if m.state == stateRegistryBrowser && !m.loading && !m.regTagActionOverlay && !m.regConfirmDeleteTags {
-			imgs := m.filteredRegistryImages()
-			if m.regBrowserFocus == 0 {
-				if len(imgs) > 0 && m.regBrowserCursor < len(imgs) {
-					if !m.regTagsLoading {
-						m.regBrowserFocus = 1
-						m.regBrowserTagCursor = 0
-						m.regBrowserTagScrollY = 0
-					}
-				}
-			} else {
-				m.regBrowserFocus = 0
-				m.regTagSelected = nil
-			}
+			return m.registryTabKey()
 		}
 	case "left", "h":
 		if m.state == stateIAMBrowser && !m.loading {
-			m.iamTab = (m.iamTab - 1 + iamTabCount) % iamTabCount
-			m.iamCursor = 0
-			m.iamScrollY = 0
-			m.iamFilter = ""
-			m.iamFiltering = false
-			return m, nil
+			return m.iamTabPrevKey()
 		}
 		if m.state == stateProfilePicker && !m.loading {
-			m.pickerAction = (m.pickerAction - 1 + pickerActionCount) % pickerActionCount
+			return m.pickerPrevAction()
 		} else if m.state == stateDashboard && m.focus == focusContent && m.activeService == serviceObjectStorage {
 			m.bucketScrollX = max(0, m.bucketScrollX-4)
 		} else if m.state == stateObjectBrowser {
@@ -1304,22 +567,14 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			// Volumes: switch to the snapshots pane.
 			m.volFocus = 1
 		} else if m.state == stateDashboard && m.activeService == serviceBilling && !m.loading {
-			m.billingPeriod = prevMonth(m.billingPeriod)
-			m.loading = true
-			m.billingExportMsg = ""
-			return m, tea.Batch(m.spin.Tick, m.fetchBillingOverview(m.billingPeriod))
+			return m.billingPrevMonthKey()
 		}
 	case "right", "l":
 		if m.state == stateIAMBrowser && !m.loading {
-			m.iamTab = (m.iamTab + 1) % iamTabCount
-			m.iamCursor = 0
-			m.iamScrollY = 0
-			m.iamFilter = ""
-			m.iamFiltering = false
-			return m, nil
+			return m.iamTabNextKey()
 		}
 		if m.state == stateProfilePicker && !m.loading {
-			m.pickerAction = (m.pickerAction + 1) % pickerActionCount
+			return m.pickerNextAction()
 		} else if m.state == stateDashboard && m.focus == focusContent && m.activeService == serviceObjectStorage {
 			m.bucketScrollX += 4
 		} else if m.state == stateObjectBrowser {
@@ -1328,24 +583,11 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			// Volumes: switch to the volumes pane.
 			m.volFocus = 0
 		} else if m.state == stateDashboard && m.activeService == serviceBilling && !m.loading {
-			next := nextMonth(m.billingPeriod)
-			// Don't navigate into the future beyond current month
-			now := time.Now().Format("2006-01")
-			if next <= now {
-				m.billingPeriod = next
-				m.loading = true
-				m.billingExportMsg = ""
-				return m, tea.Batch(m.spin.Tick, m.fetchBillingOverview(m.billingPeriod))
-			}
+			return m.billingNextMonthKey()
 		}
 	case "shift+tab", "backtab":
 		if m.state == stateIAMBrowser && !m.loading {
-			m.iamTab = (m.iamTab - 1 + iamTabCount) % iamTabCount
-			m.iamCursor = 0
-			m.iamScrollY = 0
-			m.iamFilter = ""
-			m.iamFiltering = false
-			return m, nil
+			return m.iamTabPrevKey()
 		}
 	case "up", "k":
 		return m.handleUp()
@@ -1354,142 +596,46 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		return m.handleEnter()
 	case "space":
-		if m.state == stateObjectBrowser && len(m.browserEntries) > 0 {
-			key := m.browserEntries[m.browserCursor].fullKey
-			if m.browserSelected == nil {
-				m.browserSelected = make(map[string]bool)
-			}
-			m.browserSelected[key] = !m.browserSelected[key]
-			if m.browserCursor < len(m.browserEntries)-1 {
-				m.browserCursor++
-			}
+		if m.state == stateObjectBrowser {
+			return m.s3SelectToggleKey()
 		}
 		if m.state == stateRegistryBrowser && m.regBrowserFocus == 1 && !m.regTagsLoading {
-			imgs := m.filteredRegistryImages()
-			if len(imgs) > 0 && m.regBrowserCursor < len(imgs) {
-				filteredTags := m.filteredRegistryTags(imgs[m.regBrowserCursor])
-				if len(filteredTags) > 0 && m.regBrowserTagCursor < len(filteredTags) {
-					tag := filteredTags[m.regBrowserTagCursor]
-					if m.regTagSelected == nil {
-						m.regTagSelected = make(map[string]bool)
-					}
-					m.regTagSelected[tag.name] = !m.regTagSelected[tag.name]
-					if !m.regTagSelected[tag.name] {
-						delete(m.regTagSelected, tag.name)
-					}
-					if m.regBrowserTagCursor < len(filteredTags)-1 {
-						m.regBrowserTagCursor++
-					}
-				}
-			}
+			return m.registryTagSelectToggleKey()
 		}
 	case "a":
 		// Volumes: attach the selected (unattached) volume to a server.
 		if m.state == stateDashboard && m.activeService == serviceVolumes && m.volFocus == 0 &&
 			m.focus == focusContent && !m.loading {
-			if v := m.selectedVolume(); v != nil && v.serverID == "" {
-				m.volAttachVolume = *v
-				m.volAttachCursor = 0
-				m.volAttachOverlay = true
-			}
-			return m, nil
+			return m.volumesAttachKey()
 		}
-		if m.state == stateObjectBrowser && len(m.browserEntries) > 0 {
-			if m.browserSelected == nil {
-				m.browserSelected = make(map[string]bool)
-			}
-			allSelected := len(m.browserSelected) == len(m.browserEntries)
-			for _, e := range m.browserEntries {
-				if allSelected {
-					delete(m.browserSelected, e.fullKey)
-				} else {
-					m.browserSelected[e.fullKey] = true
-				}
-			}
+		if m.state == stateObjectBrowser {
+			return m.s3SelectAllKey()
 		}
 		if m.state == stateRegistryBrowser && m.regBrowserFocus == 1 && !m.regTagsLoading {
-			imgs := m.filteredRegistryImages()
-			if len(imgs) > 0 && m.regBrowserCursor < len(imgs) {
-				filteredTags := m.filteredRegistryTags(imgs[m.regBrowserCursor])
-				if len(filteredTags) > 0 {
-					if m.regTagSelected == nil {
-						m.regTagSelected = make(map[string]bool)
-					}
-					allSelected := len(m.regTagSelected) == len(filteredTags)
-					for _, t := range filteredTags {
-						if allSelected {
-							delete(m.regTagSelected, t.name)
-						} else {
-							m.regTagSelected[t.name] = true
-						}
-					}
-				}
-			}
+			return m.registryTagSelectAllKey()
 		}
 	}
 	return m, nil
 }
 
+// ─────────────────────────────────────────────
+// State dispatchers (per-state bodies in keys_<service>.go)
+// ─────────────────────────────────────────────
+
 func (m rootModel) handleEsc() (rootModel, tea.Cmd) {
 	switch m.state {
 	case stateK8sBrowser:
-		if m.k8sConfirmReboot {
-			m.k8sConfirmReboot = false
-			return m, nil
-		}
-		if m.k8sConfirmReplace {
-			m.k8sConfirmReplace = false
-			return m, nil
-		}
-		if m.k8sBrowserFocus == 1 {
-			m.k8sBrowserFocus = 0
-			return m, nil
-		}
-		m.state = stateDashboard
-		m.activeService = serviceK8s
-		m.k8sBrowserNodes = nil
-		m.k8sBrowserNodePools = nil
-		m.k8sConfirmReboot = false
-		m.k8sConfirmReplace = false
+		return m.k8sEsc()
 	case stateSecretsBrowser:
-		m.state = stateDashboard
-		m.activeService = serviceSecrets
-		m.secBrowserFilter = ""
-		m.secBrowserFiltering = false
-		m.secShowContent = false
-		m.secContent = ""
+		return m.secretsEsc()
 	case stateIAMBrowser:
-		m.state = stateDashboard
-		m.activeService = serviceIAM
-		m.iamFilter = ""
-		m.iamFiltering = false
+		return m.iamEsc()
 	case stateRegistryBrowser:
-		m.state = stateDashboard
-		m.activeService = serviceRegistry
-		m.regBrowserFilter = ""
-		m.regBrowserFiltering = false
-		m.regBrowserFocus = 0
-		m.regBrowserTagCursor = 0
-		m.regBrowserTagScrollY = 0
-		m.regTagActionOverlay = false
-		m.regConfirmDeleteTags = false
-		m.regTagSelected = nil
-		m.regTagFilter = ""
-		m.regTagFiltering = false
+		return m.registryEsc()
 	case stateObjectBrowser:
-		if m.browserPrefix == "" {
-			// At root of bucket — go back to the bucket list.
-			m.state = stateDashboard
-		} else {
-			// Go up one level.
-			parent := parentPrefix(m.browserPrefix)
-			m.loading = true
-			return m, tea.Batch(m.spin.Tick, m.fetchBucketContents(m.browserBucket, parent))
-		}
+		return m.s3Esc()
 	case stateDashboard:
-		m.showDropdown = false
-		m.state = stateProfilePicker
-		m.err = nil
+		return m.dashboardEsc()
 	}
 	return m, nil
 }
@@ -1497,156 +643,25 @@ func (m rootModel) handleEsc() (rootModel, tea.Cmd) {
 func (m rootModel) handleUp() (rootModel, tea.Cmd) {
 	switch {
 	case m.state == stateProfilePicker && !m.loading:
-		m.profileCursor = (m.profileCursor - 1 + len(m.profileNames)) % len(m.profileNames)
-
+		return m.pickerUp()
 	case m.showDropdown && len(m.projects) > 0:
-		m.dropdownIndex = (m.dropdownIndex - 1 + len(m.projects)) % len(m.projects)
-
+		return m.dropdownUp()
 	case m.state == stateObjectBrowser && len(m.browserEntries) > 0:
-		if m.browserCursor > 0 {
-			m.browserCursor--
-			m.browserScrollX = 0
-			if m.browserCursor < m.browserScrollY {
-				m.browserScrollY = m.browserCursor
-			}
-		}
-
+		return m.s3Up()
 	case m.state == stateDashboard && m.focus == focusContent && m.activeService == serviceBilling && len(m.billingDetail) > 0:
-		if m.billingCursor > 0 {
-			m.billingCursor--
-			if m.billingCursor < m.billingScrollY {
-				m.billingScrollY = m.billingCursor
-			}
-		}
-
+		return m.billingDetailUp()
 	case m.state == stateRegistryBrowser:
-		imgs := m.filteredRegistryImages()
-		if m.regBrowserFocus == 0 && len(imgs) > 0 {
-			if m.regBrowserCursor > 0 {
-				m.regBrowserCursor--
-				if m.regBrowserCursor < m.regBrowserScrollY {
-					m.regBrowserScrollY = m.regBrowserCursor
-				}
-				m.regBrowserTagCursor = 0
-				m.regBrowserTagScrollY = 0
-				m.regTagsLoading = true
-				return m, m.fetchRegistryTags(imgs[m.regBrowserCursor])
-			}
-		} else if m.regBrowserFocus == 1 && len(imgs) > 0 && m.regBrowserCursor < len(imgs) {
-			if m.regBrowserTagCursor > 0 {
-				m.regBrowserTagCursor--
-				if m.regBrowserTagCursor < m.regBrowserTagScrollY {
-					m.regBrowserTagScrollY = m.regBrowserTagCursor
-				}
-			}
-		}
-
+		return m.registryUp()
 	case m.state == stateDashboard && m.focus == focusNav:
-		m.activeService = (m.activeService - 1 + serviceCount) % serviceCount
-		if m.activeService == serviceBilling && !m.loading {
-			m.loading = true
-			m.billingExportMsg = ""
-			return m, tea.Batch(m.spin.Tick, m.fetchBillingOverview(m.billingPeriod))
-		}
-
+		return m.dashboardNavUp()
 	case m.state == stateK8sBrowser && !m.k8sConfirmReboot:
-		if m.k8sBrowserFocus == 0 {
-			if m.k8sBrowserPoolCursor > 0 {
-				m.k8sBrowserPoolCursor--
-				if m.k8sBrowserPoolCursor < m.k8sBrowserPoolScrollY {
-					m.k8sBrowserPoolScrollY = m.k8sBrowserPoolCursor
-				}
-				m.k8sNodesLoading = true
-				return m, m.fetchNodes(m.k8sBrowserCluster, m.k8sBrowserNodePools[m.k8sBrowserPoolCursor].id)
-			}
-		} else {
-			if m.k8sBrowserNodeCursor > 0 {
-				m.k8sBrowserNodeCursor--
-				if m.k8sBrowserNodeCursor < m.k8sBrowserNodeScrollY {
-					m.k8sBrowserNodeScrollY = m.k8sBrowserNodeCursor
-				}
-			}
-		}
-
+		return m.k8sUp()
 	case m.state == stateSecretsBrowser:
-		visible := m.filteredSecretVersions()
-		if len(visible) > 0 && m.secBrowserCursor > 0 {
-			m.secBrowserCursor--
-			if m.secBrowserCursor < m.secBrowserScrollY {
-				m.secBrowserScrollY = m.secBrowserCursor
-			}
-		}
-
+		return m.secretsBrowserUp()
 	case m.state == stateIAMBrowser:
-		if m.iamVisibleCount() > 0 && m.iamCursor > 0 {
-			m.iamCursor--
-			if m.iamCursor < m.iamScrollY {
-				m.iamScrollY = m.iamCursor
-			}
-		}
-
+		return m.iamUp()
 	case m.state == stateDashboard && m.focus == focusContent:
-		if m.activeService == serviceInstance {
-			fs := m.filteredServers()
-			if len(fs) > 0 && m.instCursor > 0 {
-				m.instCursor--
-				if m.instCursor < m.instScrollY {
-					m.instScrollY = m.instCursor
-				}
-				return m, m.selectedServerPrivateIPCmd()
-			}
-		}
-		fb := m.filteredBuckets()
-		if m.activeService == serviceObjectStorage && len(fb) > 0 {
-			if m.bucketCursor > 0 {
-				m.bucketCursor--
-				m.bucketScrollX = 0
-				if m.bucketCursor < m.bucketScrollY {
-					m.bucketScrollY = m.bucketCursor
-				}
-				return m, m.maybeCalculateSize()
-			}
-			return m, nil
-		}
-		if m.activeService == serviceK8s && len(m.clusters) > 0 {
-			m.clusterCursor = (m.clusterCursor - 1 + len(m.clusters)) % len(m.clusters)
-		}
-		if m.activeService == serviceRegistry && len(m.registryNamespaces) > 0 {
-			if m.registryCursor > 0 {
-				m.registryCursor--
-				if m.registryCursor < m.registryScrollY {
-					m.registryScrollY = m.registryCursor
-				}
-			}
-		}
-		if m.activeService == serviceSecrets {
-			fs := m.filteredSecrets()
-			if len(fs) > 0 && m.secretCursor > 0 {
-				m.secretCursor--
-				if m.secretCursor < m.secretScrollY {
-					m.secretScrollY = m.secretCursor
-				}
-			}
-		}
-		if m.activeService == serviceVolumes {
-			if m.volFocus == 0 {
-				fv := m.filteredVolumes()
-				if len(fv) > 0 && m.volCursor > 0 {
-					m.volCursor--
-					if m.volCursor < m.volScrollY {
-						m.volScrollY = m.volCursor
-					}
-				}
-			} else {
-				fs := m.filteredSnapshots()
-				if len(fs) > 0 && m.volSnapCursor > 0 {
-					m.volSnapCursor--
-					if m.volSnapCursor < m.volSnapScrollY {
-						m.volSnapScrollY = m.volSnapCursor
-					}
-				}
-			}
-		}
+		return m.dashboardContentUp()
 	}
 	return m, nil
 }
@@ -1654,118 +669,25 @@ func (m rootModel) handleUp() (rootModel, tea.Cmd) {
 func (m rootModel) handleDown() (rootModel, tea.Cmd) {
 	switch {
 	case m.state == stateProfilePicker && !m.loading:
-		m.profileCursor = (m.profileCursor + 1) % len(m.profileNames)
-
+		return m.pickerDown()
 	case m.showDropdown && len(m.projects) > 0:
-		m.dropdownIndex = (m.dropdownIndex + 1) % len(m.projects)
-
+		return m.dropdownDown()
 	case m.state == stateObjectBrowser && len(m.browserEntries) > 0:
-		if m.browserCursor < len(m.browserEntries)-1 {
-			m.browserCursor++
-			m.browserScrollX = 0
-		}
-
+		return m.s3Down()
 	case m.state == stateDashboard && m.focus == focusContent && m.activeService == serviceBilling && len(m.billingDetail) > 0:
-		if m.billingCursor < len(m.billingDetail)-1 {
-			m.billingCursor++
-		}
-
+		return m.billingDetailDown()
 	case m.state == stateRegistryBrowser:
-		imgs := m.filteredRegistryImages()
-		if m.regBrowserFocus == 0 && len(imgs) > 0 {
-			if m.regBrowserCursor < len(imgs)-1 {
-				m.regBrowserCursor++
-				m.regBrowserTagCursor = 0
-				m.regBrowserTagScrollY = 0
-				m.regTagsLoading = true
-				return m, m.fetchRegistryTags(imgs[m.regBrowserCursor])
-			}
-		} else if m.regBrowserFocus == 1 && len(imgs) > 0 && m.regBrowserCursor < len(imgs) {
-			tags := imgs[m.regBrowserCursor].tags
-			if m.regBrowserTagCursor < len(tags)-1 {
-				m.regBrowserTagCursor++
-			}
-		}
-
+		return m.registryDown()
 	case m.state == stateDashboard && m.focus == focusNav:
-		m.activeService = (m.activeService + 1) % serviceCount
-		if m.activeService == serviceBilling && !m.loading {
-			m.loading = true
-			m.billingExportMsg = ""
-			return m, tea.Batch(m.spin.Tick, m.fetchBillingOverview(m.billingPeriod))
-		}
-
+		return m.dashboardNavDown()
 	case m.state == stateK8sBrowser && !m.k8sConfirmReboot:
-		if m.k8sBrowserFocus == 0 {
-			if m.k8sBrowserPoolCursor < len(m.k8sBrowserNodePools)-1 {
-				m.k8sBrowserPoolCursor++
-				if m.k8sBrowserPoolCursor >= m.k8sBrowserPoolScrollY+20 {
-					m.k8sBrowserPoolScrollY++
-				}
-				m.k8sNodesLoading = true
-				return m, m.fetchNodes(m.k8sBrowserCluster, m.k8sBrowserNodePools[m.k8sBrowserPoolCursor].id)
-			}
-		} else {
-			if m.k8sBrowserNodeCursor < len(m.k8sBrowserNodes)-1 {
-				m.k8sBrowserNodeCursor++
-			}
-		}
-
+		return m.k8sDown()
 	case m.state == stateSecretsBrowser:
-		visible := m.filteredSecretVersions()
-		if len(visible) > 0 && m.secBrowserCursor < len(visible)-1 {
-			m.secBrowserCursor++
-		}
-
+		return m.secretsBrowserDown()
 	case m.state == stateIAMBrowser:
-		if n := m.iamVisibleCount(); n > 0 && m.iamCursor < n-1 {
-			m.iamCursor++
-		}
-
+		return m.iamDown()
 	case m.state == stateDashboard && m.focus == focusContent:
-		if m.activeService == serviceInstance {
-			fs := m.filteredServers()
-			if len(fs) > 0 && m.instCursor < len(fs)-1 {
-				m.instCursor++
-				return m, m.selectedServerPrivateIPCmd()
-			}
-		}
-		fb := m.filteredBuckets()
-		if m.activeService == serviceObjectStorage && len(fb) > 0 {
-			if m.bucketCursor < len(fb)-1 {
-				m.bucketCursor++
-				m.bucketScrollX = 0
-				return m, m.maybeCalculateSize()
-			}
-			return m, nil
-		}
-		if m.activeService == serviceK8s && len(m.clusters) > 0 {
-			m.clusterCursor = (m.clusterCursor + 1) % len(m.clusters)
-		}
-		if m.activeService == serviceRegistry && len(m.registryNamespaces) > 0 {
-			if m.registryCursor < len(m.registryNamespaces)-1 {
-				m.registryCursor++
-			}
-		}
-		if m.activeService == serviceSecrets {
-			fs := m.filteredSecrets()
-			if len(fs) > 0 && m.secretCursor < len(fs)-1 {
-				m.secretCursor++
-			}
-		}
-		if m.activeService == serviceVolumes {
-			if m.volFocus == 0 {
-				fv := m.filteredVolumes()
-				if len(fv) > 0 && m.volCursor < len(fv)-1 {
-					m.volCursor++
-				}
-			} else {
-				fs := m.filteredSnapshots()
-				if len(fs) > 0 && m.volSnapCursor < len(fs)-1 {
-					m.volSnapCursor++
-				}
-			}
-		}
+		return m.dashboardContentDown()
 	}
 	return m, nil
 }
@@ -1773,89 +695,15 @@ func (m rootModel) handleDown() (rootModel, tea.Cmd) {
 func (m rootModel) handleEnter() (rootModel, tea.Cmd) {
 	switch {
 	case m.state == stateProfilePicker && !m.loading:
-		if len(m.profileNames) == 0 {
-			return m, nil
-		}
-		switch m.pickerAction {
-		case pickerActionConnect:
-			chosen := m.profileNames[m.profileCursor]
-			m.loading = true
-			m.err = nil
-			return m, tea.Batch(m.spin.Tick, m.activateProfile(chosen))
-		case pickerActionQuit:
-			return m, tea.Quit
-		}
-
-	case m.state == stateDashboard && m.focus == focusContent &&
-		m.activeService == serviceObjectStorage && len(m.filteredBuckets()) > 0:
-		fb := m.filteredBuckets()
-		b := fb[m.bucketCursor]
-		m.loading = true
-		return m, tea.Batch(m.spin.Tick, m.fetchBucketContents(b.name, ""))
-
-	case m.state == stateDashboard && m.focus == focusContent &&
-		m.activeService == serviceK8s && len(m.clusters) > 0:
-		cl := m.clusters[m.clusterCursor]
-		m.loading = true
-		return m, tea.Batch(m.spin.Tick, m.fetchNodePools(cl))
-
-	case m.state == stateDashboard && m.focus == focusContent &&
-		m.activeService == serviceRegistry && len(m.filteredRegistryNamespaces()) > 0:
-		fn := m.filteredRegistryNamespaces()
-		ns := fn[m.registryCursor]
-		m.loading = true
-		return m, tea.Batch(m.spin.Tick, m.fetchRegistryImages(ns))
-
-	case m.state == stateDashboard && m.focus == focusContent &&
-		m.activeService == serviceBilling:
-		m.loading = true
-		return m, tea.Batch(m.spin.Tick, m.fetchBillingOverview(m.billingPeriod))
-
-	case m.state == stateDashboard && m.focus == focusContent &&
-		m.activeService == serviceSecrets && len(m.filteredSecrets()) > 0:
-		fs := m.filteredSecrets()
-		s := fs[m.secretCursor]
-		m.loading = true
-		return m, tea.Batch(m.spin.Tick, m.fetchSecretVersions(s))
-
-	case m.state == stateDashboard && m.focus == focusContent &&
-		m.activeService == serviceIAM:
-		if m.iamLoaded {
-			// Data already cached — enter the browser immediately.
-			m.iamFilter = ""
-			m.iamFiltering = false
-			m.state = stateIAMBrowser
-			return m, nil
-		}
-		m.loading = true
-		return m, tea.Batch(m.spin.Tick, m.fetchIAM())
-
+		return m.pickerEnter()
+	case m.state == stateDashboard && m.focus == focusContent:
+		return m.dashboardContentEnter()
 	case m.state == stateSecretsBrowser && !m.loading:
-		visible := m.filteredSecretVersions()
-		if len(visible) > 0 && m.secBrowserCursor < len(visible) {
-			rev := visible[m.secBrowserCursor].revision
-			m.loading = true
-			return m, tea.Batch(m.spin.Tick, m.accessSecretVersion(m.secBrowserSecret.id, rev))
-		}
-
+		return m.secretsBrowserEnterKey()
 	case m.state == stateRegistryBrowser && m.regBrowserFocus == 1:
-		visible := m.filteredRegistryImages()
-		if len(visible) > 0 && m.regBrowserCursor < len(visible) {
-			img := visible[m.regBrowserCursor]
-			if len(img.tags) > 0 && m.regBrowserTagCursor < len(img.tags) {
-				m.regTagActionOverlay = true
-			}
-		}
-		return m, nil
-
+		return m.registryBrowserEnterKey()
 	case m.state == stateObjectBrowser && len(m.browserEntries) > 0:
-		entry := m.browserEntries[m.browserCursor]
-		if entry.isDir {
-			// Descend into the folder.
-			m.loading = true
-			return m, tea.Batch(m.spin.Tick, m.fetchBucketContents(m.browserBucket, entry.fullKey))
-		}
-		// File selected — no action for now (could open detail overlay later).
+		return m.s3EnterKey()
 	}
 	return m, nil
 }
@@ -1883,39 +731,3 @@ const (
 	clipboardNoteDuration  = 2 * time.Second
 	kubeConfigNoteDuration = 5 * time.Second // long enough to read the path
 )
-
-// ─────────────────────────────────────────────
-// Profile activation (Cmd)
-// ─────────────────────────────────────────────
-
-func (m rootModel) activateProfile(name string) tea.Cmd {
-	return func() tea.Msg {
-		scwClient, mc, region, err := buildClients(m.scwCfg, name)
-		if err != nil {
-			return errMsg{err}
-		}
-		saveTUIConfig(tuiConfig{ActiveProfile: name})
-
-		// Read default_project_id and default_organization_id directly from
-		// the profile — no API call needed.
-		projectID := ""
-		orgID := ""
-		if prof, err := m.scwCfg.GetProfile(name); err == nil {
-			if prof.DefaultProjectID != nil {
-				projectID = *prof.DefaultProjectID
-			}
-			if prof.DefaultOrganizationID != nil {
-				orgID = *prof.DefaultOrganizationID
-			}
-		}
-
-		return clientsReadyMsg{
-			scwClient:             scwClient,
-			minioClient:           mc,
-			profileName:           name,
-			region:                region,
-			defaultProjectID:      projectID,
-			defaultOrganizationID: orgID,
-		}
-	}
-}
