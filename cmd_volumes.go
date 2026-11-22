@@ -141,7 +141,7 @@ func (m rootModel) listInstanceZoneVolumes(api *instance.API, zone string) ([]vo
 		for _, v := range resp.Volumes {
 			vols = append(vols, volumeFromSDK(v))
 		}
-		if len(vols) >= int(resp.TotalCount) {
+		if uint64(len(vols)) >= uint64(resp.TotalCount) {
 			break
 		}
 		page++
@@ -197,7 +197,7 @@ func (m rootModel) listBlockZoneVolumes(api *block.API, zone string) ([]volumeIt
 		for _, v := range resp.Volumes {
 			vols = append(vols, blockVolumeFromSDK(v))
 		}
-		if len(vols) >= int(resp.TotalCount) {
+		if uint64(len(vols)) >= resp.TotalCount {
 			break
 		}
 		page++
@@ -225,7 +225,7 @@ func (m rootModel) listBlockZoneSnapshots(api *block.API, zone string) ([]snapsh
 		for _, s := range resp.Snapshots {
 			snaps = append(snaps, blockSnapshotFromSDK(s))
 		}
-		if len(snaps) >= int(resp.TotalCount) {
+		if uint64(len(snaps)) >= resp.TotalCount {
 			break
 		}
 		page++
