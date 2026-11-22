@@ -1,55 +1,43 @@
 # Copilot Instructions for scw-tui
 
 ## Overview
-This project is a terminal UI (TUI) for managing Scaleway resources, written in Go. It uses Bubbletea for UI, MinIO for S3-compatible object storage, and Scaleway's SDK for API access. The main entry point is `main.go`.
 
-## Architecture
-- **Single-file app:** All core logic is in `main.go`.
-- **UI State:** Managed via a `rootModel` struct, with Bubbletea's update/view pattern.
-- **Profiles:** Uses Scaleway SDK config (`~/.config/scw/config.yaml`) for credentials. UI preferences are stored in `~/.config/scw-tui/config.json`.
-- **Services:** Supports Object Storage (S3) and Kubernetes (K8s) via service selection.
-- **Data Flow:** Profile selection → client creation → dashboard → object browser or K8s cluster view.
+A keyboard-driven terminal UI (TUI) for managing Scaleway cloud resources, written in Go with [Bubbletea](https://github.com/charmbracelet/bubbletea) and the Dracula colour theme.
+
+**Services supported:** Instances (servers + power actions), Volumes & Snapshots, Object Storage (S3), Kubernetes (Kapsule), Container Registry, Secrets Manager, Billing, and a read-only IAM browser.
+
+**[CLAUDE.md](../CLAUDE.md) is the authoritative architecture document** — read it before making changes. This file only summarises the essentials.
 
 ## Developer Workflows
-- **Build:**
-  - `make build` (uses `Makefile`)
-  - Output binary: `bin/scw-tui`
-- **Clean:**
-  - `make clean`
-- **Docker:**
-  - Build with Dockerfile: `docker build -t scw-tui .`
-  - Runs Alpine, entrypoint is the built binary
-- **Run:**
-  - `bin/scw-tui` (after build)
-- **Dependencies:**
-  - Managed via `go.mod` (run `go mod tidy` before build)
+
+```bash
+make build        # go mod tidy + go build -o bin/scw-tui main.go
+make test         # go vet ./... + go test .
+make lint         # golangci-lint + gosec + govulncheck (run `make install-tools` once)
+./bin/scw-tui     # run
+```
+
+CI (`.github/workflows/ci.yml`) runs a `lint` job (go vet + golangci-lint) and a `test` job (go test), together equivalent to `make test`; `security.yml` adds gosec + govulncheck.
+
+## Architecture
+
+- **Single `package main`**, split across focused files: `main.go` (state, palette, Init/Update/View), `types.go`, `config.go`, `keys.go`, `filter.go`, `util.go`, plus one `cmd_*.go` (async API ops) and one `view_*.go` (rendering) per service.
+- **UI state** lives entirely in the `rootModel` struct — there is no other state manager.
+- **Navigation** is a two-axis state machine: `state` constants select the screen (profile picker, dashboard, object/K8s/registry/secrets/IAM/billing browsers), `service` constants select which dashboard service is active. Instances and Volumes are dashboard-level only (no dedicated `state`).
+- **Profiles/credentials** come from the Scaleway SDK config (`~/.config/scw/config.yaml`) via `scw.LoadConfig()`; only UI preferences (active profile) live in `~/.config/scw-tui/config.json`. Never duplicate credentials.
 
 ## Patterns & Conventions
-- **UI overlays:** Input, confirmation, and upload overlays are managed via state flags in `rootModel`.
-- **Keyboard navigation:** Vim-like keys (`j/k`, `up/down`, `/` for filter, `c` for create, `u` for upload, `d` for delete, `a` for select all, `esc` for back/cancel, `q` for quit).
-- **Bubbletea:** Uses `tea.Cmd` for async actions (fetch, upload, delete, etc.).
-- **Error handling:** Errors are sent as messages (`errMsg`) and update UI state.
-- **Styling:** Uses Dracula palette via Lipgloss.
 
-## Integration Points
-- **Scaleway SDK:** For API access, profile loading, and project/cluster info.
-- **MinIO:** For S3-compatible object storage operations.
-- **Bubbletea/Bubbles/Lipgloss:** For TUI rendering and interaction.
+- **Async I/O:** all blocking work (API calls, uploads) is a `tea.Cmd` closure returning a typed message (e.g. `serversMsg`, `volumesMsg`, `errMsg`). Errors are wrapped in `errMsg` — never returned bare.
+- **Background goroutines** (upload progress only) may use the global `teaProgram.Send()`; prefer `tea.Cmd` for everything else.
+- **Overlays** are boolean flags on `rootModel` rendered in `View()` (input dialog, confirm dialogs, progress bars, pickers).
+- **Keyboard:** vim-style (`j`/`k`, `/` filter, `Enter`, `Esc` back, `q` quit) plus per-service single-key actions dispatched centrally in `handleKey()` (`keys.go`). Per-screen key tables live in [README.md](../README.md).
+- **S3 ops** go through minio-go; **all other Scaleway resources** through scaleway-sdk-go.
+- **Styling:** Dracula palette constants at the top of `main.go`. Do not introduce new colours without explicit user approval. Selected/highlighted list rows must be plain (uncolored) text so the row background spans the full width — see the styling notes in CLAUDE.md.
+- **Polling:** lists refresh on a 3s tick while items are in transient states (server starting/stopping, volume snapshotting/attaching, …).
 
-## Key Files
-- `main.go`: All application logic, UI, and state
-- `Makefile`: Build/clean commands
-- `Dockerfile`: Container build
-- `go.mod`: Dependency management
+## Examples
 
-## Example: Adding a New Service
-- Add a new constant to the `service*` enum
-- Extend `rootModel` and update navigation logic
-- Implement fetch/view logic for the new service
+**Adding a new service:** add a `service*` constant (`main.go`), extend `rootModel`, add a dashboard nav entry + preview pane (`view_dashboard.go`), create `cmd_<svc>.go` (fetch ops as `tea.Cmd`s) and `view_<svc>.go` (rendering), wire keys in `keys.go`, and document keys in README.md.
 
-## Example: Custom Keyboard Action
-- Add handling in `handleKey()` in `main.go`
-- Update UI state as needed
-
----
-**Feedback:** Please review and suggest edits for unclear or missing sections. This guide is meant to help AI agents quickly understand and contribute to scw-tui.
+**Adding a key action:** handle it in `handleKey()` in `keys.go` (input overlay and overlays intercept first), and add a row to the README key table.
