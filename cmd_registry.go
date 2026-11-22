@@ -17,10 +17,7 @@ import (
 func (m rootModel) deleteRegistryTags(imageID string, tags []registryTag) tea.Cmd {
 	return func() tea.Msg {
 		regAPI := registry.NewAPI(m.scwClient)
-		region := scw.Region(m.activeRegion)
-		if region == "" {
-			region = scw.RegionNlAms
-		}
+		region := m.region()
 		var deleted []string
 		for _, tag := range tags {
 			tagID := tag.id
@@ -59,10 +56,7 @@ func (m rootModel) deleteRegistryTags(imageID string, tags []registryTag) tea.Cm
 func (m rootModel) fetchRegistryImages(ns registryNamespace) tea.Cmd {
 	return func() tea.Msg {
 		regAPI := registry.NewAPI(m.scwClient)
-		region := scw.Region(m.activeRegion)
-		if region == "" {
-			region = scw.RegionNlAms
-		}
+		region := m.region()
 		req := &registry.ListImagesRequest{
 			Region:      region,
 			NamespaceID: &ns.id,
@@ -101,10 +95,7 @@ func (m rootModel) fetchRegistryImages(ns registryNamespace) tea.Cmd {
 func (m rootModel) fetchRegistryTags(img registryImage) tea.Cmd {
 	return func() tea.Msg {
 		regAPI := registry.NewAPI(m.scwClient)
-		region := scw.Region(m.activeRegion)
-		if region == "" {
-			region = scw.RegionNlAms
-		}
+		region := m.region()
 		req := &registry.ListTagsRequest{
 			Region:  region,
 			ImageID: img.id,

@@ -278,7 +278,7 @@ func (m rootModel) listVolumesAllZones() ([]volumeItem, []snapshotItem, error) {
 	volumes := make([]volumeItem, 0, 64)
 	snapshots := make([]snapshotItem, 0, 64)
 	var errs []error
-	for _, zone := range regionZones(m.activeRegion) {
+	for _, zone := range regionZones(string(m.region())) {
 		zv, zs, zerrs := m.listZoneVolumes(zone)
 		volumes = append(volumes, zv...)
 		snapshots = append(snapshots, zs...)
