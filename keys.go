@@ -591,7 +591,10 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 // tag filter quits on ctrl+c.
 // ─────────────────────────────────────────────
 
-func (m rootModel) handleFilterKey(msg tea.KeyPressMsg, active *bool, filter *string, reset func(), quitOnCtrlC bool) (rootModel, tea.Cmd) {
+// The handler itself must also use a pointer receiver: active/filter point
+// into the caller's model, so a value receiver would return a stale copy and
+// silently drop every edit (the filter could then never be typed into or left).
+func (m *rootModel) handleFilterKey(msg tea.KeyPressMsg, active *bool, filter *string, reset func(), quitOnCtrlC bool) (rootModel, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		*active = false
@@ -616,7 +619,7 @@ func (m rootModel) handleFilterKey(msg tea.KeyPressMsg, active *bool, filter *st
 		return m.handleDown()
 	case "ctrl+c":
 		if quitOnCtrlC {
-			return m, tea.Quit
+			return *m, tea.Quit
 		}
 	default:
 		if msg.Text != "" {
@@ -624,7 +627,7 @@ func (m rootModel) handleFilterKey(msg tea.KeyPressMsg, active *bool, filter *st
 			reset()
 		}
 	}
-	return m, nil
+	return *m, nil
 }
 
 // ─────────────────────────────────────────────
