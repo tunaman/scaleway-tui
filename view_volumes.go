@@ -84,23 +84,34 @@ func (m rootModel) renderVolumes(totalW, height int, borderColor color.Color) st
 	const prefixW = 2
 	const colGap = 2
 	const stateW = 12 + colGap // "snapshotting" + gap (not the last column)
-	var sizeW = 10
-	var typeW = 10
-	var lastW = 14 // SERVER / BASE
+	const sizeW = 10 + colGap
+	const typeW = 10 + colGap
+	const minLastW = 14 + colGap // SERVER / BASE
 
-	sizeW += colGap
-	typeW += colGap
-	lastW += colGap
-	nameW := listW - 2 - prefixW - sizeW - typeW - stateW - lastW - scrollW
-	if nameW < 10 {
-		nameW = 10
+	isVols := m.volFocus == 0
+
+	// Size NAME to the widest display name of the active tab (over the full
+	// list, so the layout doesn't jump while filtering) and hand the rest of
+	// the row to the last column (SERVER / BASE), which then fits a full
+	// pvc-<uuid> base-volume name on wide terminals.
+	nameMax := lipgloss.Width("NAME")
+	if isVols {
+		for _, v := range m.volumes {
+			nameMax = max(nameMax, lipgloss.Width(volumeDisplayName(v.name)))
+		}
+	} else {
+		for _, s := range m.snapshots {
+			nameMax = max(nameMax, lipgloss.Width(volumeDisplayName(s.name)))
+		}
 	}
+	avail := listW - 2 - prefixW - sizeW - typeW - stateW - scrollW
+	nameW := max(10, min(nameMax+colGap, avail-minLastW))
+	lastW := max(minLastW, avail-nameW)
 	// Column text widths keep a trailing gap so a truncated value ("…") never
 	// runs into the next column.
 	nameTxt, sizeTxt, typeTxt, lastTxt := nameW-colGap, sizeW-colGap, typeW-colGap, lastW-colGap
 	col := func(v string, txt, w int) string { return padRight(padRight(v, txt), w) }
 
-	isVols := m.volFocus == 0
 	vols := m.filteredVolumes()
 	snaps := m.filteredSnapshots()
 	visibleLen := len(vols)
