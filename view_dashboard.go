@@ -230,10 +230,9 @@ func (m rootModel) renderStatusBar() string {
 	case m.activeService == serviceVolumes && m.state == stateDashboard:
 		keys = lipgloss.JoinHorizontal(lipgloss.Top,
 			hotkey("↑↓", "Navigate"),
-			hotkey("←→", "Pane"),
+			hotkey("←→", "Vols/Snaps"),
 			hotkey("Tab", "Focus"),
 			hotkey("/", "Filter"),
-			hotkey("S", "Snapshot"),
 			hotkey("A", "Attach"),
 			hotkey("X", "Detach"),
 			hotkey("D", "Delete"),

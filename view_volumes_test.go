@@ -65,8 +65,10 @@ func TestRenderVolumesDashboard(t *testing.T) {
 		"50.00 GB",
 		"b_ssd",
 		"nl-ams-1",
+		// Tab strip.
+		"Volumes 2",
+		"Snapshots 1",
 		// Detail pane for the selected (first) volume.
-		"Server",
 		"Created",
 		"15 Jan 2026",
 		// Top bar counters.
@@ -211,12 +213,12 @@ func TestHasTransientVolume(t *testing.T) {
 func TestBlockVolumeFromSDK(t *testing.T) {
 	created := time.Date(2026, 11, 1, 9, 0, 0, 0, time.UTC)
 	v := &block.Volume{
-		ID:      "vol-1",
-		Name:    "db-data",
-		Size:    10 * scw.GB,
-		Type:    "sbs_5k",
-		Status:  block.VolumeStatusInUse,
-		Zone:    scw.ZoneNlAms1,
+		ID:        "vol-1",
+		Name:      "db-data",
+		Size:      10 * scw.GB,
+		Type:      "sbs_5k",
+		Status:    block.VolumeStatusInUse,
+		Zone:      scw.ZoneNlAms1,
 		CreatedAt: &created,
 		References: []*block.Reference{
 			{
@@ -248,13 +250,13 @@ func TestBlockVolumeFromSDK(t *testing.T) {
 func TestBlockSnapshotFromSDK(t *testing.T) {
 	created := time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC)
 	s := &block.Snapshot{
-		ID:         "snap-1",
-		Name:       "snap-db",
-		Size:       5 * scw.GB,
-		Status:     block.SnapshotStatusAvailable,
-		Zone:       scw.ZoneNlAms1,
-		CreatedAt:  &created,
-		Class:      block.StorageClassSbs,
+		ID:        "snap-1",
+		Name:      "snap-db",
+		Size:      5 * scw.GB,
+		Status:    block.SnapshotStatusAvailable,
+		Zone:      scw.ZoneNlAms1,
+		CreatedAt: &created,
+		Class:     block.StorageClassSbs,
 		ParentVolume: &block.SnapshotParentVolume{
 			ID:   "vol-1",
 			Name: "db-data",
@@ -299,5 +301,70 @@ func TestVolumeServerName(t *testing.T) {
 	unknown := volumeItem{id: "v3", serverID: "srv-9"}
 	if got := m.volumeServerName(unknown); got != "" {
 		t.Errorf("volumeServerName(unknown ID) = %q, want empty", got)
+	}
+}
+
+// TestVolumeDisplayName checks the CSI cluster-ID prefix is dropped.
+func TestVolumeDisplayName(t *testing.T) {
+	cases := map[string]string{
+		"cf84129e-5f45-49ea-ae79-3669fa69c53f_pvc-2a4bca7d-2f02": "pvc-2a4bca7d-2f02",
+		"pvc-abc":  "pvc-abc",
+		"web-data": "web-data",
+		"":         "",
+	}
+	for in, want := range cases {
+		if got := volumeDisplayName(in); got != want {
+			t.Errorf("volumeDisplayName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// TestRenderVolumesScrollbarAligned checks the selected row's scrollbar cell
+// sits in the same column as on the other rows, and that the highlight does
+// not swallow it (the scrollbar must follow the background span).
+func TestRenderVolumesScrollbarAligned(t *testing.T) {
+	m := rootModel{
+		width: 160, height: 20,
+		state: stateDashboard, focus: focusContent, activeService: serviceVolumes,
+		project: "test-project", activeRegion: "nl-ams",
+	}
+	for i := 0; i < 40; i++ {
+		m.volumes = append(m.volumes, volumeItem{
+			id: string(rune('a' + i%26)), name: "cluster_pvc-" + strings.Repeat("x", 60),
+			size: 10 << 30, volType: "sbs_5k", state: "in_use", zone: "nl-ams-1",
+			serverName: "scw-very-long-server-name-that-truncates",
+		})
+	}
+	out := stripANSI(m.drawDashboard())
+	col := func(l string) int {
+		r := []rune(l)
+		// The list pane scrollbar is the last │/█ before the list pane's right border.
+		idx := strings.Index(l, "pvc-")
+		if idx < 0 {
+			return -1
+		}
+		for i := len([]rune(l[:idx])); i < len(r); i++ {
+			if r[i] == '│' || r[i] == '█' {
+				return i
+			}
+		}
+		return -1
+	}
+	var sel, other = -1, -1
+	for _, l := range strings.Split(out, "\n") {
+		if !strings.Contains(l, "pvc-") || !strings.Contains(l, "in_use") {
+			continue
+		}
+		if strings.Contains(l, "▌") && sel < 0 {
+			sel = col(l)
+		} else if other < 0 && !strings.Contains(l, "▌") {
+			other = col(l)
+		}
+	}
+	if sel < 0 || other < 0 || sel != other {
+		t.Errorf("scrollbar column: selected=%d other=%d, want equal", sel, other)
+	}
+	if strings.Contains(out, "cluster_pvc") {
+		t.Error("cluster prefix should be stripped from displayed names")
 	}
 }

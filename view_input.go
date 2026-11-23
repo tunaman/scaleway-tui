@@ -52,10 +52,6 @@ func (m rootModel) renderInputOverlay(base string) string {
 		title = "  NEW SECRET"
 		subtitle = "  Enter a name for the new secret."
 		placeholder = "my-secret-name"
-	case inputModeSnapshot:
-		title = "  NEW SNAPSHOT"
-		subtitle = "  Snapshot of " + m.snapTarget.name + " — enter a name."
-		placeholder = "snap-name"
 	}
 
 	titleRendered := lipgloss.NewStyle().Foreground(colGreen).Bold(true).Render(title)
