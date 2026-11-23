@@ -42,8 +42,41 @@ func (m rootModel) volumeServerName(v volumeItem) string {
 	return ""
 }
 
+// volumeDisplayName shortens Kubernetes CSI volume/snapshot names for
+// display: everything before the "pvc-" marker (the cluster-ID prefix, e.g.
+// "<cluster-uuid>_pvc-…") is dropped. Names without the marker are returned
+// unchanged. Filtering still matches the full name.
+func volumeDisplayName(name string) string {
+	if i := strings.Index(name, "pvc-"); i > 0 {
+		return name[i:]
+	}
+	return name
+}
+
+// renderVolumeTabStrip renders the Volumes / Snapshots tab bar (same pill
+// style as the IAM browser) with per-tab counts.
+func (m rootModel) renderVolumeTabStrip() string {
+	labels := []string{
+		fmt.Sprintf("Volumes %d", len(m.filteredVolumes())),
+		fmt.Sprintf("Snapshots %d", len(m.filteredSnapshots())),
+	}
+	pills := make([]string, len(labels))
+	for i, label := range labels {
+		if i == m.volFocus {
+			pills[i] = lipgloss.NewStyle().
+				Background(colPurple).Foreground(colBg).Bold(true).
+				Render(" " + label + " ")
+		} else {
+			pills[i] = lipgloss.NewStyle().
+				Foreground(colComment).
+				Render(" " + label + " ")
+		}
+	}
+	return strings.Join(pills, " ")
+}
+
 // renderVolumes draws the Volumes & Snapshots dashboard service: a list pane
-// (Tab switches between volumes and snapshots) plus a detail pane for the
+// (←/→ switch between the Volumes and Snapshots tabs) plus a detail pane for the
 // selected item.
 func (m rootModel) renderVolumes(totalW, height int, borderColor color.Color) string {
 	listW := totalW - detailPaneWidth - 1
@@ -79,7 +112,7 @@ func (m rootModel) renderVolumes(totalW, height int, borderColor color.Color) st
 		cursor, scrollY = m.volSnapCursor, m.volSnapScrollY
 	}
 
-	listH := max(1, height-listRowOverhead)
+	listH := max(1, height-listRowOverhead-1) // -1 for the tab strip
 
 	// ── Scroll viewport ──
 	if cursor >= scrollY+listH {
@@ -142,15 +175,15 @@ func (m rootModel) renderVolumes(totalW, height int, borderColor color.Color) st
 		var name, sizeStr, typeStr, stateStr, lastStr string
 		if isVols {
 			v := vols[i]
-			name, sizeStr, typeStr, stateStr = v.name, formatBytes(int64(v.size)), v.volType, v.state // #nosec G115 -- volume sizes are far below MaxInt64
+			name, sizeStr, typeStr, stateStr = volumeDisplayName(v.name), formatBytes(int64(v.size)), v.volType, v.state // #nosec G115 -- volume sizes are far below MaxInt64
 			lastStr = m.volumeServerName(v)
 			if lastStr == "" {
 				lastStr = "—"
 			}
 		} else {
 			s := snaps[i]
-			name, sizeStr, typeStr, stateStr = s.name, formatBytes(int64(s.size)), s.volType, s.state // #nosec G115 -- snapshot sizes are far below MaxInt64
-			lastStr = s.baseVolume
+			name, sizeStr, typeStr, stateStr = volumeDisplayName(s.name), formatBytes(int64(s.size)), s.volType, s.state // #nosec G115 -- snapshot sizes are far below MaxInt64
+			lastStr = volumeDisplayName(s.baseVolume)
 			if lastStr == "" {
 				lastStr = "—"
 			}
@@ -163,12 +196,16 @@ func (m rootModel) renderVolumes(totalW, height int, borderColor color.Color) st
 		stateColored := lipgloss.NewStyle().Foreground(volumeStateColor(stateStr)).Render(padRight(stateStr, stateW))
 
 		if i == cursor {
-			plainCols := cols + padRight(stateStr, stateW) + padRight(lastStr, lastTxt)
+			// The scrollbar cell is appended outside the highlight: it carries
+			// its own color codes, which would reset the background mid-row,
+			// and the plain row must keep the full last-column width so the
+			// scrollbar lines up with the other rows.
+			plainCols := cols + padRight(stateStr, stateW) + lastCol
 			rows = append(rows, lipgloss.NewStyle().
 				Background(colBg3).Foreground(colFg).Bold(true).
-				Width(listW - 2).Render("▌ "+plainCols+sb))
+				Width(listW-2-scrollW).Render("▌ "+plainCols)+sb)
 		} else {
-			rows = append(rows, lipgloss.NewStyle().Foreground(colFg).Width(listW - 2).Render(
+			rows = append(rows, lipgloss.NewStyle().Foreground(colFg).Width(listW-2).Render(
 				"  "+cols+stateColored+lastCol+sb))
 		}
 	}
@@ -207,6 +244,7 @@ func (m rootModel) renderVolumes(totalW, height int, borderColor color.Color) st
 	}
 
 	listContent := lipgloss.JoinVertical(lipgloss.Left,
+		m.renderVolumeTabStrip(),
 		header,
 		strings.Repeat("─", listW-2),
 		lipgloss.JoinVertical(lipgloss.Left, rows...),
@@ -236,15 +274,11 @@ func (m rootModel) renderVolumeDetail() string {
 		return lipgloss.NewStyle().Faint(true).Render("Select a volume")
 	}
 	innerW := detailPaneWidth - 4
-	nameDisplay := v.name
+	nameDisplay := volumeDisplayName(v.name)
 	if lipgloss.Width(nameDisplay) > innerW {
 		nameDisplay = string([]rune(nameDisplay)[:innerW-1]) + "…"
 	}
 
-	server := m.volumeServerName(*v)
-	if server == "" {
-		server = "—"
-	}
 	lines := []string{
 		lipgloss.NewStyle().Foreground(colBlue).Bold(true).Render(" " + nameDisplay + " "),
 		"",
@@ -252,7 +286,6 @@ func (m rootModel) renderVolumeDetail() string {
 		volumeDetailKey("Type", v.volType, colFg),
 		volumeDetailKey("Size", formatBytes(int64(v.size)), colFg), // #nosec G115 -- volume sizes are far below MaxInt64
 		volumeDetailKey("State", v.state, volumeStateColor(v.state)),
-		volumeDetailKey("Server", server, colFg),
 		volumeDetailKey("Created", fmtDate(v.createdAt), colFg),
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, lines...)
@@ -264,12 +297,12 @@ func (m rootModel) renderSnapshotDetail() string {
 		return lipgloss.NewStyle().Faint(true).Render("Select a snapshot")
 	}
 	innerW := detailPaneWidth - 4
-	nameDisplay := s.name
+	nameDisplay := volumeDisplayName(s.name)
 	if lipgloss.Width(nameDisplay) > innerW {
 		nameDisplay = string([]rune(nameDisplay)[:innerW-1]) + "…"
 	}
 
-	base := s.baseVolume
+	base := volumeDisplayName(s.baseVolume)
 	if base == "" {
 		base = "—"
 	}
@@ -391,7 +424,7 @@ func (m rootModel) renderVolumeAttachOverlay(base string) string {
 
 	heading := bg.Foreground(colGreen).Bold(true).Width(innerW).Render("Attach to which server?")
 	sub := bg.Width(innerW).Render(bg.Foreground(colComment).Render(
-		"Volume: "+m.volAttachVolume.name+"  ·  Zone: "+m.volAttachVolume.zone))
+		"Volume: " + m.volAttachVolume.name + "  ·  Zone: " + m.volAttachVolume.zone))
 
 	var listLines []string
 	if len(servers) == 0 {

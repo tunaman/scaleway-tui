@@ -58,10 +58,6 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				m.input.active = false
 				m.loading = true
 				return m, tea.Batch(m.spin.Tick, m.createSecret(val))
-			case inputModeSnapshot:
-				m.input.active = false
-				m.loading = true
-				return m, tea.Batch(m.spin.Tick, m.createSnapshot(m.snapTarget, val))
 			case inputModeSecretNewVersion:
 				m.input.active = false
 				m.loading = true
@@ -490,11 +486,6 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if m.state == stateDashboard && m.activeService == serviceInstance && !m.loading && m.instConfirmAction == instActionNone {
 			return m.instancePowerOffKey()
 		}
-		// Volumes: snapshot the selected volume (name input pre-filled).
-		if m.state == stateDashboard && m.activeService == serviceVolumes && m.volFocus == 0 &&
-			m.focus == focusContent && !m.loading {
-			return m.volumesSnapshotKey()
-		}
 	case "x", "X":
 		// Volumes: detach the selected (attached) volume from its server.
 		if m.state == stateDashboard && m.activeService == serviceVolumes && m.volFocus == 0 &&
@@ -535,8 +526,8 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		} else if m.state == stateObjectBrowser {
 			m.browserScrollX = max(0, m.browserScrollX-4)
 		} else if m.state == stateDashboard && m.activeService == serviceVolumes && m.focus == focusContent && !m.loading {
-			// Volumes: switch to the snapshots pane.
-			m.volFocus = 1
+			// Volumes: switch to the Volumes tab.
+			m.volFocus = 0
 		} else if m.state == stateDashboard && m.activeService == serviceBilling && !m.loading {
 			return m.billingPrevMonthKey()
 		}
@@ -551,8 +542,8 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		} else if m.state == stateObjectBrowser {
 			m.browserScrollX += 4
 		} else if m.state == stateDashboard && m.activeService == serviceVolumes && m.focus == focusContent && !m.loading {
-			// Volumes: switch to the volumes pane.
-			m.volFocus = 0
+			// Volumes: switch to the Snapshots tab.
+			m.volFocus = 1
 		} else if m.state == stateDashboard && m.activeService == serviceBilling && !m.loading {
 			return m.billingNextMonthKey()
 		}

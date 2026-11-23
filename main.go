@@ -292,7 +292,6 @@ type rootModel struct {
 	volAttachOverlay   bool
 	volAttachCursor    int
 	volAttachVolume    volumeItem // volume awaiting a server pick for attach
-	snapTarget         volumeItem // volume the pending snapshot-name input is for
 
 	// Clients (nil until a profile is activated)
 	minioClient    *minio.Client
@@ -627,7 +626,7 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case snapshotCreatedMsg, snapshotDeletedMsg, volumeDeletedMsg, volumeAttachedMsg, volumeDetachedMsg:
+	case snapshotDeletedMsg, volumeDeletedMsg, volumeAttachedMsg, volumeDetachedMsg:
 		m.loading = true
 		return m, tea.Batch(m.spin.Tick, m.fetchVolumes())
 

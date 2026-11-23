@@ -293,7 +293,6 @@ const (
 	inputModeSecretNewVersion
 	inputModeSecretUpdateDesc
 	inputModeSecret
-	inputModeSnapshot
 )
 
 // createDoneMsg is sent after a successful create/upload operation.
@@ -416,7 +415,6 @@ type volumesMsg struct {
 // a transient state, mirroring the server/node polling.
 type volumePollTickMsg struct{}
 
-type snapshotCreatedMsg struct{}
 type snapshotDeletedMsg struct{}
 type volumeDeletedMsg struct{}
 type volumeAttachedMsg struct{}

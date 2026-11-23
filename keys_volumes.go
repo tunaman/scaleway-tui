@@ -1,19 +1,12 @@
 package main
 
 import (
-	"time"
-
 	tea "charm.land/bubbletea/v2"
 )
 
 // ─────────────────────────────────────────────
 // Key handling — Volumes & Snapshots (dashboard service)
 // ─────────────────────────────────────────────
-
-// defaultSnapshotName builds a suggested snapshot name: snap-<volname>-<date>.
-func defaultSnapshotName(volName string) string {
-	return "snap-" + volName + "-" + time.Now().Format("20060102")
-}
 
 // resetVolFilterCursors zeroes both pane cursors/scroll for the shared
 // filter handler (handleFilterKey).
@@ -64,19 +57,6 @@ func (m rootModel) volumesStartFilterKey() (rootModel, tea.Cmd) {
 	m.volScrollY = 0
 	m.volSnapCursor = 0
 	m.volSnapScrollY = 0
-	return m, nil
-}
-
-// volumesSnapshotKey opens the snapshot name input, pre-filled with a suggestion.
-func (m rootModel) volumesSnapshotKey() (rootModel, tea.Cmd) {
-	if v := m.selectedVolume(); v != nil {
-		m.snapTarget = *v
-		m.input.active = true
-		m.input.mode = inputModeSnapshot
-		m.input.value = defaultSnapshotName(v.name)
-		m.input.cursor = len([]rune(m.input.value))
-		m.input.errStr = ""
-	}
 	return m, nil
 }
 

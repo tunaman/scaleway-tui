@@ -347,41 +347,6 @@ func pollVolumesAfterDelay() tea.Cmd {
 	}
 }
 
-// createSnapshot takes a snapshot of a volume. sbs volumes go through the
-// Block Storage API; legacy local/scratch volumes through the Instance API.
-func (m rootModel) createSnapshot(vol volumeItem, name string) tea.Cmd {
-	return func() tea.Msg {
-		if isBlockVolume(vol.volType) {
-			blockAPI := block.NewAPI(m.scwClient)
-			req := &block.CreateSnapshotRequest{
-				Zone:     scw.Zone(vol.zone),
-				Name:     name,
-				VolumeID: vol.id,
-			}
-			if m.projectID != "" {
-				req.ProjectID = m.projectID
-			}
-			if _, err := blockAPI.CreateSnapshot(req); err != nil {
-				return errMsg{fmt.Errorf("create snapshot: %w", err)}
-			}
-			return snapshotCreatedMsg{}
-		}
-		instanceAPI := instance.NewAPI(m.scwClient)
-		req := &instance.CreateSnapshotRequest{
-			Zone:     scw.Zone(vol.zone),
-			Name:     name,
-			VolumeID: &vol.id,
-		}
-		if m.projectID != "" {
-			req.Project = &m.projectID
-		}
-		if _, err := instanceAPI.CreateSnapshot(req); err != nil {
-			return errMsg{fmt.Errorf("create snapshot: %w", err)}
-		}
-		return snapshotCreatedMsg{}
-	}
-}
-
 // deleteSnapshot removes a snapshot (Block API for sbs, Instance API for
 // legacy local/scratch snapshots).
 func (m rootModel) deleteSnapshot(snap snapshotItem) tea.Cmd {
