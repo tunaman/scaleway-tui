@@ -368,3 +368,39 @@ func TestRenderVolumesScrollbarAligned(t *testing.T) {
 		t.Error("cluster prefix should be stripped from displayed names")
 	}
 }
+
+// TestRenderVolumesFullBaseName verifies NAME is sized to its content so a
+// full pvc-<uuid> base-volume name fits in the BASE column on a wide terminal.
+func TestRenderVolumesFullBaseName(t *testing.T) {
+	const base = "pvc-40a5672e-1111-2222-3333-444444444444"
+	m := rootModel{
+		width:         200,
+		height:        30,
+		state:         stateDashboard,
+		focus:         focusContent,
+		activeService: serviceVolumes,
+		project:       "test-project",
+		activeRegion:  "nl-ams",
+		volFocus:      1,
+		snapshots: []snapshotItem{{
+			id:         "44444444-4444-4444-4444-444444444444",
+			name:       "snapshot-bf11957e-9df9-4ad8-be00-bba2e03e78d1",
+			size:       1024 * 1024 * 1024,
+			volType:    "sbs_5k",
+			state:      "available",
+			zone:       "nl-ams-1",
+			baseVolume: "0123abcd-0000-0000-0000-000000000000_" + base,
+		}},
+	}
+	listPane := m.renderVolumes(m.width-30, 20, colPurple)
+	// The detail pane also shows the base volume, so look at the list row itself.
+	for _, line := range strings.Split(stripANSI(listPane), "\n") {
+		if strings.Contains(line, "sbs_5k") { // the list row, not the detail pane title
+			if !strings.Contains(line, base) {
+				t.Errorf("BASE column should show the full %q, row: %q", base, line)
+			}
+			return
+		}
+	}
+	t.Fatal("snapshot row not found in list pane")
+}
