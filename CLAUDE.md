@@ -116,9 +116,10 @@ Overlays are rendered conditionally in `View()` on top of the base content using
 - `m.billingExportOverlay` — billing CSV export date-range picker (`view_billing.go`); `e/E` key
 - `m.volConfirmAction != volActionNone` — volume/snapshot delete/attach/detach confirmation (`view_volumes.go`); `D`/`X`/`A` keys
 - `m.volAttachOverlay` — attach server picker, servers in the volume's zone (`view_volumes.go`); `A` key
+- `m.regionPickerOverlay` — region picker (`view_region.go`); `g` key (dashboard). Switching rebuilds the S3 client and resets/refetches all region-scoped state; Billing/IAM (org-scoped) are left untouched. The choice persists in `~/.config/scw-tui/config.json` (`active_region`).
 
 ### Client Initialization
-`buildClients()` constructs both `scwClient` and `minioClient` from a named Scaleway profile loaded via `scw.LoadConfig()`. Clients are stored in `rootModel` and captured by closure in async commands.
+`buildClients()` constructs both `scwClient` and `minioClient` from a named Scaleway profile loaded via `scw.LoadConfig()`. The effective region is `resolveRegion()` (saved `active_region` → profile `default_region` → `nl-ams`); the S3 client is built for that region via `buildS3Client()` (region-scoped endpoint), while the Scaleway client is region-agnostic (region passed per call via `m.region()`). Clients are stored in `rootModel` and captured by closure in async commands.
 
 ### Styling
 All colors are Dracula palette constants defined near the top of `main.go`. Do not introduce new colors without explicit user approval.

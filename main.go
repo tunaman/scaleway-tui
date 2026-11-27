@@ -117,6 +117,11 @@ type rootModel struct {
 	// Active profile info (displayed in top bar / status bar)
 	activeProfileName string
 	activeRegion      string
+	savedRegion       string // last-used region from ~/.config/scw-tui/config.json
+
+	// Region picker overlay state (region switcher)
+	regionPickerOverlay bool
+	regionPickerCursor  int
 
 	// Dashboard selection state
 	activeService   int
@@ -915,6 +920,7 @@ func main() {
 		profileCursor: cursor,
 		pickerAction:  pickerActionConnect,
 		prevBucketSel: -1,
+		savedRegion:   tuiCfg.ActiveRegion,
 	}
 
 	p := tea.NewProgram(m)

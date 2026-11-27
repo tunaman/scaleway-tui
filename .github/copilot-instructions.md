@@ -24,7 +24,7 @@ CI (`.github/workflows/ci.yml`) runs a `lint` job (go vet + golangci-lint) and a
 - **Single `package main`**, split across focused files: `main.go` (state, palette, Init/Update/View), `types.go`, `config.go`, `keys.go`, `filter.go`, `util.go`, plus one `cmd_*.go` (async API ops) and one `view_*.go` (rendering) per service.
 - **UI state** lives entirely in the `rootModel` struct — there is no other state manager.
 - **Navigation** is a two-axis state machine: `state` constants select the screen (profile picker, dashboard, object/K8s/registry/secrets/IAM/billing browsers), `service` constants select which dashboard service is active. Instances and Volumes are dashboard-level only (no dedicated `state`).
-- **Profiles/credentials** come from the Scaleway SDK config (`~/.config/scw/config.yaml`) via `scw.LoadConfig()`; only UI preferences (active profile) live in `~/.config/scw-tui/config.json`. Never duplicate credentials.
+- **Profiles/credentials** come from the Scaleway SDK config (`~/.config/scw/config.yaml`) via `scw.LoadConfig()`; only UI preferences (active profile + active region) live in `~/.config/scw-tui/config.json`. Never duplicate credentials.
 
 ## Patterns & Conventions
 

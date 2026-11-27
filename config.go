@@ -20,13 +20,15 @@ import (
 // This means we never need to parse YAML ourselves or depend on gopkg.in/yaml.v3
 // for Scaleway credentials.
 //
-// Our own ~/.config/scw-tui/config.yaml only stores UI preferences (last profile).
+// Our own ~/.config/scw-tui/config.json only stores UI preferences (last profile
+// + last used region). Credentials live only in the Scaleway config.
 // ─────────────────────────────────────────────
 
-// tuiConfig is stored at ~/.config/scw-tui/config.yaml.
+// tuiConfig is stored at ~/.config/scw-tui/config.json.
 // It is intentionally minimal — credentials live only in the Scaleway config.
 type tuiConfig struct {
 	ActiveProfile string `json:"active_profile"`
+	ActiveRegion  string `json:"active_region"`
 }
 
 // loadTUIConfig reads our TUI config. Returns empty struct on first run.
@@ -67,9 +69,40 @@ func saveTUIConfig(cfg tuiConfig) {
 // Client factory — uses SDK Profile directly
 // ─────────────────────────────────────────────
 
+// buildS3Client constructs a MinIO/S3 client for the given region. The Scaleway
+// S3 endpoint is region-scoped (s3.<region>.scw.cloud).
+func buildS3Client(prof *scw.Profile, region string) (*minio.Client, error) {
+	mc, err := minio.New(fmt.Sprintf("s3.%s.scw.cloud", region), &minio.Options{
+		Creds:  credentials.NewStaticV4(*prof.AccessKey, *prof.SecretKey, ""),
+		Secure: true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("building S3 client: %w", err)
+	}
+	return mc, nil
+}
+
+// resolveRegion picks the effective region for a profile: the saved region wins
+// (when it is a known region), then the profile's default region, then nl-ams.
+func resolveRegion(savedRegion string, prof *scw.Profile) string {
+	if savedRegion != "" {
+		for _, r := range scw.AllRegions {
+			if string(r) == savedRegion {
+				return savedRegion
+			}
+		}
+	}
+	if prof.DefaultRegion != nil && *prof.DefaultRegion != "" {
+		return *prof.DefaultRegion
+	}
+	return "nl-ams"
+}
+
 // buildClients constructs a Scaleway API client and a MinIO/S3 client from a
-// named profile loaded via the SDK's own config parser.
-func buildClients(cfg *scw.Config, profileName string) (*scw.Client, *minio.Client, string, error) {
+// named profile loaded via the SDK's own config parser. savedRegion is the
+// last-used region from our config ("" = use the profile default); the resolved
+// region is returned so callers can persist and display it.
+func buildClients(cfg *scw.Config, profileName, savedRegion string) (*scw.Client, *minio.Client, string, error) {
 	prof, err := cfg.GetProfile(profileName)
 	if err != nil {
 		return nil, nil, "", fmt.Errorf("profile %q: %w", profileName, err)
@@ -82,23 +115,16 @@ func buildClients(cfg *scw.Config, profileName string) (*scw.Client, *minio.Clie
 		return nil, nil, "", fmt.Errorf("profile %q has no access_key", profileName)
 	}
 
+	region := resolveRegion(savedRegion, prof)
+
 	scwClient, err := scw.NewClient(scw.WithProfile(prof))
 	if err != nil {
 		return nil, nil, "", fmt.Errorf("building Scaleway client: %w", err)
 	}
 
-	// Derive S3 endpoint from profile region, falling back to nl-ams.
-	region := "nl-ams"
-	if prof.DefaultRegion != nil && *prof.DefaultRegion != "" {
-		region = string(*prof.DefaultRegion)
-	}
-
-	mc, err := minio.New(fmt.Sprintf("s3.%s.scw.cloud", region), &minio.Options{
-		Creds:  credentials.NewStaticV4(*prof.AccessKey, *prof.SecretKey, ""),
-		Secure: true,
-	})
+	mc, err := buildS3Client(prof, region)
 	if err != nil {
-		return nil, nil, "", fmt.Errorf("building S3 client: %w", err)
+		return nil, nil, "", err
 	}
 
 	return scwClient, mc, region, nil
