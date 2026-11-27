@@ -15,6 +15,7 @@ A keyboard-driven terminal UI for managing your [Scaleway](https://www.scaleway.
 ## Features
 
 - **Multi-profile support** — pick any profile from your existing `~/.config/scw/config.yaml`
+- **In-TUI region switcher** — switch the active region with `g` (picker with the SDK-known regions); region-scoped services reset and refetch, the choice persists to `~/.config/scw-tui/config.json`
 - **Instances browser** — list all servers across every zone of the region with type, IP, and state; power on, power off, and reboot (with confirmation); detail pane with volumes and IPs (private IPs of routed-IP servers are resolved live via the IPAM API)
 - **Object Storage browser** — navigate buckets and folders, view object sizes, upload, download one or more selected files to a local directory, create folders/buckets, and delete objects
 - **Kubernetes cluster browser** — list Kapsule clusters, browse node pools (autoscaling, node type, zone, volume), view nodes with status, reboot/replace nodes, and download the cluster kubeconfig to `~/.kube/scw-<cluster>.yaml`
@@ -60,6 +61,7 @@ On first launch you will be presented with a profile picker. Select a profile an
 | `k` / `↑` | Move up |
 | `Enter` | Select / open |
 | `/` | Filter list |
+| `g` | Switch region (dashboard) |
 | `F5` | Refresh |
 | `Esc` | Back / cancel / clear filter |
 | `q` | Quit |
@@ -161,7 +163,7 @@ On first launch you will be presented with a profile picker. Select a profile an
 
 ## Configuration
 
-scw-tui stores only UI preferences (last active profile) in `~/.config/scw-tui/config.json`. Credentials are never duplicated — they are read exclusively from the official Scaleway config.
+scw-tui stores only UI preferences (last active profile + active region) in `~/.config/scw-tui/config.json`. Credentials are never duplicated — they are read exclusively from the official Scaleway config.
 
 ## Development
 

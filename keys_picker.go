@@ -54,11 +54,11 @@ func (m rootModel) pickerEnter() (rootModel, tea.Cmd) {
 
 func (m rootModel) activateProfile(name string) tea.Cmd {
 	return func() tea.Msg {
-		scwClient, mc, region, err := buildClients(m.scwCfg, name)
+		scwClient, mc, region, err := buildClients(m.scwCfg, name, m.savedRegion)
 		if err != nil {
 			return errMsg{err}
 		}
-		saveTUIConfig(tuiConfig{ActiveProfile: name})
+		saveTUIConfig(tuiConfig{ActiveProfile: name, ActiveRegion: region})
 
 		// Read default_project_id and default_organization_id directly from
 		// the profile — no API call needed.

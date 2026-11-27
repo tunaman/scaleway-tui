@@ -72,6 +72,9 @@ func (m rootModel) drawDashboard() string {
 	if m.billingExportOverlay {
 		return m.renderBillingExportOverlay()
 	}
+	if m.regionPickerOverlay {
+		return m.renderRegionPicker()
+	}
 	return base
 }
 
@@ -261,6 +264,8 @@ func (m rootModel) renderStatusBar() string {
 			hotkey("Q", "Quit"),
 		)
 	}
+	// The region switcher is available on the dashboard everywhere.
+	keys = lipgloss.JoinHorizontal(lipgloss.Top, keys, hotkey("g", "Region"))
 	// barW matches the Width passed to the outer style — no extra Padding() so
 	// there is no off-by-two and no background-colour rectangle at the right edge.
 	barW := m.width - 4

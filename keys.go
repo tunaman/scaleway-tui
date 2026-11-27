@@ -171,6 +171,9 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.billingExportOverlay {
 		return m.handleBillingExportOverlayKey(msg)
 	}
+	if m.regionPickerOverlay {
+		return m.handleRegionPickerKey(msg)
+	}
 	if m.volAttachOverlay {
 		return m.handleVolAttachOverlayKey(msg)
 	}
@@ -368,6 +371,8 @@ func (m rootModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.billingExportKey()
 	case "p", "P":
 		return m.billingProjectKey()
+	case "g", "G":
+		return m.regionKey()
 	case "/":
 		if m.state == stateDashboard && m.focus == focusContent && m.activeService == serviceInstance {
 			return m.instanceStartFilterKey()
